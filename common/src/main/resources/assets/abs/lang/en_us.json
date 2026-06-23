@@ -1,0 +1,6 @@
+{
+  "itemGroup.abs.main": "Audio Bounds System",
+
+  "block.abs.speaker": "Speaker",
+  "block.abs.audio_controller": "Audio Controller"
+}
