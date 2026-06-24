@@ -30,12 +30,14 @@ public class SpeakerBlockEntity extends BlockEntity {
     private static final String KEY_AUDIO_FILE  = "AudioFile";
     private static final String KEY_TRACK_TITLE = "TrackTitle";
     private static final String KEY_SUBTITLE    = "Subtitle";
+    private static final String KEY_SUBTITLE_ENABLED = "SubtitleEnabled";
 
     private AudioBounds  bounds      = AudioBounds.DEFAULT;
     private FalloffCurve falloffCurve = FalloffCurve.LOGARITHMIC;
     private String       audioFile   = "";
     private String       trackTitle  = "";
     private String       subtitle    = "";
+    private boolean      subtitleEnabled = true;
 
     // 再生状態はトランジェント（NBT 保存しない）
     private boolean playing = false;
@@ -50,6 +52,7 @@ public class SpeakerBlockEntity extends BlockEntity {
     public String       getAudioFile()   { return audioFile;    }
     public String       getTrackTitle()  { return trackTitle;   }
     public String       getSubtitle()    { return subtitle;     }
+    public boolean      isSubtitleEnabled() { return subtitleEnabled; }
     public boolean      isPlaying()      { return playing;      }
 
     public void setBounds(AudioBounds bounds) {
@@ -79,10 +82,16 @@ public class SpeakerBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    public void applyLoadedConfig(AudioBounds bounds, FalloffCurve curve, String audioFile, String trackTitle, String subtitle) {
+    public void setSubtitleEnabled(boolean subtitleEnabled) {
+        this.subtitleEnabled = subtitleEnabled;
+        setChanged();
+    }
+
+    public void applyLoadedConfig(AudioBounds bounds, FalloffCurve curve, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
         this.bounds = bounds;
         this.falloffCurve = curve;
         this.audioFile = audioFile == null ? "" : audioFile;
+        this.subtitleEnabled = subtitleEnabled;
         this.trackTitle = trackTitle == null ? "" : trackTitle;
         this.subtitle = subtitle == null ? "" : subtitle;
     }
@@ -116,8 +125,8 @@ public class SpeakerBlockEntity extends BlockEntity {
                 buf.writeBlockPos(worldPosition);
                 buf.writeLong(token.getMostSignificantBits());
                 buf.writeLong(token.getLeastSignificantBits());
-                buf.writeUtf(displayTrackTitle(), 128);
-                buf.writeUtf(subtitle, 512);
+                buf.writeUtf(subtitleEnabled ? displayTrackTitle() : "", 128);
+                buf.writeUtf(subtitleEnabled ? subtitle : "", 512);
                 buf.writeVarInt(100);
                 NetworkManager.sendToPlayer(player, ABSNetwork.PLAY_AUDIO, buf);
             }
@@ -149,7 +158,10 @@ public class SpeakerBlockEntity extends BlockEntity {
     }
 
     private String displayTrackTitle() {
-        return trackTitle.isBlank() ? audioFile : trackTitle;
+        if (!trackTitle.isBlank()) {
+            return trackTitle;
+        }
+        return subtitle.isBlank() ? audioFile : "";
     }
 
     private void syncToClients() {
@@ -168,6 +180,7 @@ public class SpeakerBlockEntity extends BlockEntity {
         tag.putString(KEY_AUDIO_FILE, audioFile);
         tag.putString(KEY_TRACK_TITLE, trackTitle);
         tag.putString(KEY_SUBTITLE, subtitle);
+        tag.putBoolean(KEY_SUBTITLE_ENABLED, subtitleEnabled);
     }
 
     @Override
@@ -187,6 +200,9 @@ public class SpeakerBlockEntity extends BlockEntity {
         }
         if (tag.contains(KEY_SUBTITLE)) {
             subtitle = tag.getString(KEY_SUBTITLE);
+        }
+        if (tag.contains(KEY_SUBTITLE_ENABLED)) {
+            subtitleEnabled = tag.getBoolean(KEY_SUBTITLE_ENABLED);
         }
         loadTomlConfigIfReady();
     }

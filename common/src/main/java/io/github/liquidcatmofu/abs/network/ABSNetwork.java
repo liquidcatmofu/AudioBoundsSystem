@@ -34,6 +34,9 @@ public final class ABSNetwork {
             double height = buf.readDouble();
             FalloffCurve curve = buf.readEnum(FalloffCurve.class);
             String audioFile = buf.readUtf(256);
+            boolean subtitleEnabled = buf.readBoolean();
+            String trackTitle = buf.readUtf(128);
+            String subtitle = buf.readUtf(512);
 
             ctx.queue(() -> {
                 if (!(ctx.getPlayer() instanceof ServerPlayer player)) {
@@ -50,6 +53,9 @@ public final class ABSNetwork {
                 speaker.setBounds(new AudioBounds(shape, clampPositive(radius), clampPositive(width), clampPositive(depth), clampPositive(height)));
                 speaker.setFalloffCurve(curve);
                 speaker.setAudioFile(audioFile);
+                speaker.setSubtitleEnabled(subtitleEnabled);
+                speaker.setTrackTitle(trackTitle);
+                speaker.setSubtitle(subtitle);
                 SpeakerTomlConfig.save(player.level(), speaker);
             });
         });

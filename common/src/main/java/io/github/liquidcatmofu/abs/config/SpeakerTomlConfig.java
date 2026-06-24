@@ -33,7 +33,7 @@ public final class SpeakerTomlConfig {
         }
         try (CommentedFileConfig config = CommentedFileConfig.builder(path).sync().preserveInsertionOrder().build()) {
             config.load();
-            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getAudioFile(), speaker.getTrackTitle(), speaker.getSubtitle());
+            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getAudioFile(), speaker.isSubtitleEnabled(), speaker.getTrackTitle(), speaker.getSubtitle());
             config.save();
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to save speaker TOML config {}", path, e);
@@ -61,6 +61,7 @@ public final class SpeakerTomlConfig {
                     readBounds(config),
                     readFalloffCurve(config),
                     readAudioFile(config),
+                    readSubtitleEnabled(config),
                     readTrackTitle(config),
                     readSubtitle(config)
             );
@@ -88,6 +89,10 @@ public final class SpeakerTomlConfig {
         return config.getOrElse("audio.file", "");
     }
 
+    public static boolean readSubtitleEnabled(CommentedConfig config) {
+        return config.getOrElse("display.subtitle_enabled", true);
+    }
+
     public static String readTrackTitle(CommentedConfig config) {
         return config.getOrElse("display.track_title", "");
     }
@@ -96,7 +101,7 @@ public final class SpeakerTomlConfig {
         return config.getOrElse("display.subtitle", "");
     }
 
-    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, String audioFile, String trackTitle, String subtitle) {
+    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
         config.set("area.shape", bounds.getShape().name());
         config.setComment("area.shape", "Bounds shape: SPHERE, BOX, CYLINDER, or HEMISPHERE.");
         config.set("area.radius", bounds.getRadius());
@@ -114,6 +119,8 @@ public final class SpeakerTomlConfig {
         config.set("audio.file", audioFile == null ? "" : audioFile);
         config.setComment("audio.file", "Audio cache file name resolved under the ABS HTTP cache directory.");
 
+        config.set("display.subtitle_enabled", subtitleEnabled);
+        config.setComment("display.subtitle_enabled", "Set false to suppress the track title and subtitle HUD for this speaker.");
         config.set("display.track_title", trackTitle == null ? "" : trackTitle);
         config.setComment("display.track_title", "Optional title shown above subtitles. Empty values fall back to audio.file.");
         config.set("display.subtitle", subtitle == null ? "" : subtitle);
