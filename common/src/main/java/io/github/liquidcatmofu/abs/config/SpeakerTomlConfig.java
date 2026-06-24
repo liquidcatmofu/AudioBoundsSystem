@@ -2,7 +2,6 @@ package io.github.liquidcatmofu.abs.config;
 
 import com.electronwill.nightconfig.core.CommentedConfig;
 import com.electronwill.nightconfig.core.file.CommentedFileConfig;
-import dev.architectury.platform.Platform;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
@@ -12,6 +11,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,9 +25,15 @@ public final class SpeakerTomlConfig {
 
     public static void save(Level level, SpeakerBlockEntity speaker) {
         Path path = pathFor(level, speaker.getBlockPos());
+        try {
+            Files.createDirectories(path.getParent());
+        } catch (IOException e) {
+            AudioBoundsSystem.LOGGER.warn("ABS: Failed to create speaker TOML config directory {}", path.getParent(), e);
+            return;
+        }
         try (CommentedFileConfig config = CommentedFileConfig.builder(path).sync().preserveInsertionOrder().build()) {
             config.load();
-            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getAudioFile());
+            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getAudioFile(), speaker.getTrackTitle(), speaker.getSubtitle());
             config.save();
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to save speaker TOML config {}", path, e);
@@ -51,9 +57,13 @@ public final class SpeakerTomlConfig {
 
         try (CommentedFileConfig config = CommentedFileConfig.builder(path).sync().preserveInsertionOrder().build()) {
             config.load();
-            speaker.setBounds(readBounds(config));
-            speaker.setFalloffCurve(readFalloffCurve(config));
-            speaker.setAudioFile(readAudioFile(config));
+            speaker.applyLoadedConfig(
+                    readBounds(config),
+                    readFalloffCurve(config),
+                    readAudioFile(config),
+                    readTrackTitle(config),
+                    readSubtitle(config)
+            );
             return true;
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to load speaker TOML config {}", path, e);
@@ -78,7 +88,15 @@ public final class SpeakerTomlConfig {
         return config.getOrElse("audio.file", "");
     }
 
-    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, String audioFile) {
+    public static String readTrackTitle(CommentedConfig config) {
+        return config.getOrElse("display.track_title", "");
+    }
+
+    public static String readSubtitle(CommentedConfig config) {
+        return config.getOrElse("display.subtitle", "");
+    }
+
+    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, String audioFile, String trackTitle, String subtitle) {
         config.set("area.shape", bounds.getShape().name());
         config.setComment("area.shape", "Bounds shape: SPHERE, BOX, CYLINDER, or HEMISPHERE.");
         config.set("area.radius", bounds.getRadius());
@@ -95,13 +113,21 @@ public final class SpeakerTomlConfig {
 
         config.set("audio.file", audioFile == null ? "" : audioFile);
         config.setComment("audio.file", "Audio cache file name resolved under the ABS HTTP cache directory.");
+
+        config.set("display.track_title", trackTitle == null ? "" : trackTitle);
+        config.setComment("display.track_title", "Optional title shown above subtitles. Empty values fall back to audio.file.");
+        config.set("display.subtitle", subtitle == null ? "" : subtitle);
+        config.setComment("display.subtitle", "Optional subtitle text shown while the audio starts playing.");
     }
 
     private static Path pathFor(Level level, BlockPos pos) {
         ResourceKey<Level> dimension = level.dimension();
         ResourceLocation id = dimension.location();
         String dimensionPath = id.getNamespace() + "/" + id.getPath().replace('/', '_');
-        return Platform.getConfigFolder()
+        if (level.getServer() == null) {
+            throw new IllegalStateException("Speaker TOML config path requires a server level");
+        }
+        return level.getServer().getWorldPath(LevelResource.ROOT)
                 .resolve(AudioBoundsSystem.MOD_ID)
                 .resolve("speakers")
                 .resolve(dimensionPath)
