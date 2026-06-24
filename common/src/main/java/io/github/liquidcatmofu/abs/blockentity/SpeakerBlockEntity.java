@@ -2,6 +2,7 @@ package io.github.liquidcatmofu.abs.blockentity;
 
 import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
+import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
@@ -14,6 +15,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -33,6 +35,7 @@ public class SpeakerBlockEntity extends BlockEntity {
 
     // 再生状態はトランジェント（NBT 保存しない）
     private boolean playing = false;
+    private boolean tomlLoaded = false;
 
     public SpeakerBlockEntity(BlockPos pos, BlockState state) {
         super(ABSBlockEntities.SPEAKER.get(), pos, state);
@@ -146,6 +149,13 @@ public class SpeakerBlockEntity extends BlockEntity {
         if (tag.contains(KEY_AUDIO_FILE)) {
             audioFile = tag.getString(KEY_AUDIO_FILE);
         }
+        loadTomlConfigIfReady();
+    }
+
+    @Override
+    public void setLevel(Level level) {
+        super.setLevel(level);
+        loadTomlConfigIfReady();
     }
 
     @Override
@@ -158,5 +168,13 @@ public class SpeakerBlockEntity extends BlockEntity {
     @Override
     public ClientboundBlockEntityDataPacket getUpdatePacket() {
         return ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    private void loadTomlConfigIfReady() {
+        if (tomlLoaded || level == null || level.isClientSide) {
+            return;
+        }
+        tomlLoaded = true;
+        SpeakerTomlConfig.load(level, this);
     }
 }

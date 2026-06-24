@@ -24,6 +24,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 public final class SpeakerConfigScreen extends Screen {
     private static final int PANEL_WIDTH = 300;
     private static final int ROW_HEIGHT = 24;
+    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 9 + 34;
+    private static final int SCREEN_MARGIN = 12;
 
     private final BlockPos pos;
     private final Screen parent;
@@ -49,7 +51,7 @@ public final class SpeakerConfigScreen extends Screen {
     @Override
     protected void init() {
         int x = (this.width - PANEL_WIDTH) / 2;
-        int y = Math.max(24, (this.height - 188) / 2);
+        int y = contentTop();
         SpeakerBlockEntity speaker = currentSpeaker();
         AudioBounds bounds = speaker == null ? AudioBounds.DEFAULT : speaker.getBounds();
 
@@ -84,7 +86,7 @@ public final class SpeakerConfigScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics);
         int x = (this.width - PANEL_WIDTH) / 2;
-        int y = Math.max(24, (this.height - 188) / 2);
+        int y = contentTop();
         graphics.drawCenteredString(this.font, this.title, this.width / 2, y, 0xFFFFFF);
         drawLabel(graphics, "Radius", x, y + ROW_HEIGHT * 2 + 6);
         drawLabel(graphics, "Width", x, y + ROW_HEIGHT * 3 + 6);
@@ -149,6 +151,12 @@ public final class SpeakerConfigScreen extends Screen {
         }
         BlockEntity blockEntity = minecraft.level.getBlockEntity(pos);
         return blockEntity instanceof SpeakerBlockEntity speaker ? speaker : null;
+    }
+
+    private int contentTop() {
+        int centered = (this.height - CONTENT_HEIGHT) / 2;
+        int maxTop = this.height - CONTENT_HEIGHT - SCREEN_MARGIN;
+        return Math.max(SCREEN_MARGIN, Math.min(centered, maxTop));
     }
 
     private void drawLabel(GuiGraphics graphics, String label, int x, int y) {

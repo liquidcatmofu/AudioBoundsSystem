@@ -13,6 +13,8 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class SpeakerTomlConfig {
@@ -29,6 +31,33 @@ public final class SpeakerTomlConfig {
             config.save();
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to save speaker TOML config {}", path, e);
+        }
+    }
+
+    public static boolean load(Level level, SpeakerBlockEntity speaker) {
+        Path path = pathFor(level, speaker.getBlockPos());
+        if (!Files.exists(path)) {
+            return false;
+        }
+        try {
+            if (Files.size(path) > MAX_PACKET_BYTES) {
+                AudioBoundsSystem.LOGGER.warn("ABS: Speaker TOML config is too large: {}", path);
+                return false;
+            }
+        } catch (IOException e) {
+            AudioBoundsSystem.LOGGER.warn("ABS: Failed to stat speaker TOML config {}", path, e);
+            return false;
+        }
+
+        try (CommentedFileConfig config = CommentedFileConfig.builder(path).sync().preserveInsertionOrder().build()) {
+            config.load();
+            speaker.setBounds(readBounds(config));
+            speaker.setFalloffCurve(readFalloffCurve(config));
+            speaker.setAudioFile(readAudioFile(config));
+            return true;
+        } catch (RuntimeException e) {
+            AudioBoundsSystem.LOGGER.warn("ABS: Failed to load speaker TOML config {}", path, e);
+            return false;
         }
     }
 
