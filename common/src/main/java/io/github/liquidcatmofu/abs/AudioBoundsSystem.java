@@ -4,6 +4,7 @@ import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.init.ABSBlocks;
 import io.github.liquidcatmofu.abs.init.ABSCreativeTabs;
 import io.github.liquidcatmofu.abs.init.ABSItems;
+import io.github.liquidcatmofu.abs.network.ABSNetwork;
 import io.github.liquidcatmofu.abs.server.ABSServerLifecycle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,7 @@ public final class AudioBoundsSystem {
         ABSItems.register();
         ABSBlockEntities.register();
         ABSCreativeTabs.register();
+        ABSNetwork.registerServerHandlers();
         ABSServerLifecycle.register();
     }
 }
