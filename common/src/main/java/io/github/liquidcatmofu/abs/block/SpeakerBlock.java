@@ -10,6 +10,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.SoundType;
@@ -57,6 +58,25 @@ public class SpeakerBlock extends BaseEntityBlock {
             be.startPlaying((ServerLevel) level);
         }
         return InteractionResult.CONSUME;
+    }
+
+    @Override
+    public void neighborChanged(BlockState state, Level level, BlockPos pos,
+                                Block block, BlockPos fromPos, boolean isMoving) {
+        super.neighborChanged(state, level, pos, block, fromPos, isMoving);
+        if (level.isClientSide) {
+            return;
+        }
+        if (!(level.getBlockEntity(pos) instanceof SpeakerBlockEntity be)) {
+            return;
+        }
+
+        boolean powered = level.hasNeighborSignal(pos);
+        if (powered && !be.isPlaying()) {
+            be.startPlaying((ServerLevel) level);
+        } else if (!powered && be.isPlaying()) {
+            be.stopPlaying((ServerLevel) level);
+        }
     }
 
     @Environment(EnvType.CLIENT)
