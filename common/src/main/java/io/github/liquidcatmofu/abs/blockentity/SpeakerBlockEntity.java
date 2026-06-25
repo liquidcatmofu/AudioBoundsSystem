@@ -2,9 +2,11 @@ package io.github.liquidcatmofu.abs.blockentity;
 
 import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
+import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
 import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
+import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
 import io.github.liquidcatmofu.abs.server.ABSHttpServer;
@@ -20,6 +22,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -31,17 +34,22 @@ public class SpeakerBlockEntity extends BlockEntity {
     private static final String KEY_TRACK_TITLE = "TrackTitle";
     private static final String KEY_SUBTITLE    = "Subtitle";
     private static final String KEY_SUBTITLE_ENABLED = "SubtitleEnabled";
+    private static final String KEY_REDSTONE_MODE = "RedstoneMode";
 
     private AudioBounds  bounds      = AudioBounds.DEFAULT;
     private FalloffCurve falloffCurve = FalloffCurve.LOGARITHMIC;
+    private RedstoneMode redstoneMode = RedstoneMode.LEVEL;
     private String       audioFile   = "";
     private String       trackTitle  = "";
     private String       subtitle    = "";
     private boolean      subtitleEnabled = true;
+    private boolean      redstonePowered = false;
 
     // 再生状態はトランジェント（NBT 保存しない）
     private boolean playing = false;
     private boolean tomlLoaded = false;
+    private boolean needsInitialRedstoneSync = false;
+    private long playbackEndsAtTick = -1L;
 
     public SpeakerBlockEntity(BlockPos pos, BlockState state) {
         super(ABSBlockEntities.SPEAKER.get(), pos, state);
@@ -54,6 +62,8 @@ public class SpeakerBlockEntity extends BlockEntity {
     public String       getSubtitle()    { return subtitle;     }
     public boolean      isSubtitleEnabled() { return subtitleEnabled; }
     public boolean      isPlaying()      { return playing;      }
+    public boolean      isRedstonePowered() { return redstonePowered; }
+    public RedstoneMode getRedstoneMode() { return redstoneMode; }
 
     public void setBounds(AudioBounds bounds) {
         this.bounds = bounds;
@@ -63,6 +73,12 @@ public class SpeakerBlockEntity extends BlockEntity {
 
     public void setFalloffCurve(FalloffCurve curve) {
         this.falloffCurve = curve;
+        setChanged();
+        syncToClients();
+    }
+
+    public void setRedstoneMode(RedstoneMode redstoneMode) {
+        this.redstoneMode = redstoneMode == null ? RedstoneMode.LEVEL : redstoneMode;
         setChanged();
         syncToClients();
     }
@@ -87,13 +103,39 @@ public class SpeakerBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    public void applyLoadedConfig(AudioBounds bounds, FalloffCurve curve, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
+    public void applyLoadedConfig(AudioBounds bounds, FalloffCurve curve, RedstoneMode redstoneMode, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
         this.bounds = bounds;
         this.falloffCurve = curve;
+        this.redstoneMode = redstoneMode == null ? RedstoneMode.LEVEL : redstoneMode;
         this.audioFile = audioFile == null ? "" : audioFile;
         this.subtitleEnabled = subtitleEnabled;
         this.trackTitle = trackTitle == null ? "" : trackTitle;
         this.subtitle = subtitle == null ? "" : subtitle;
+    }
+
+    public void syncRedstoneState(ServerLevel level, boolean powered) {
+        if (this.redstonePowered == powered) {
+            return;
+        }
+        this.redstonePowered = powered;
+        switch (redstoneMode) {
+            case LEVEL -> {
+                if (powered) {
+                    startPlaying(level);
+                } else {
+                    stopPlaying(level);
+                }
+            }
+            case PULSE -> {
+                if (powered) {
+                    if (playing) {
+                        stopPlaying(level);
+                    } else {
+                        startPlaying(level);
+                    }
+                }
+            }
+        }
     }
 
     /** 範囲内の全プレイヤーへ PlayAudioPacket を送信して再生を開始する。 */
@@ -113,7 +155,16 @@ public class SpeakerBlockEntity extends BlockEntity {
             return;
         }
 
+        long durationTicks;
+        try {
+            durationTicks = OggAudioDuration.readDurationTicks(path);
+        } catch (IOException e) {
+            AudioBoundsSystem.LOGGER.warn("ABS: failed to read audio duration for SpeakerBlock at {}: {}", worldPosition, path, e);
+            return;
+        }
+
         playing = true;
+        playbackEndsAtTick = level.getGameTime() + durationTicks;
         Vec3 center = Vec3.atCenterOf(worldPosition);
         double maxRange = getMaxRange() * 2;
 
@@ -136,6 +187,7 @@ public class SpeakerBlockEntity extends BlockEntity {
     /** 範囲内の全プレイヤーへ StopAudioPacket を送信して再生を停止する。 */
     public void stopPlaying(ServerLevel level) {
         playing = false;
+        playbackEndsAtTick = -1L;
         Vec3 center = Vec3.atCenterOf(worldPosition);
         double maxRange = getMaxRange() * 2;
 
@@ -181,6 +233,7 @@ public class SpeakerBlockEntity extends BlockEntity {
         tag.putString(KEY_TRACK_TITLE, trackTitle);
         tag.putString(KEY_SUBTITLE, subtitle);
         tag.putBoolean(KEY_SUBTITLE_ENABLED, subtitleEnabled);
+        tag.putString(KEY_REDSTONE_MODE, redstoneMode.name());
     }
 
     @Override
@@ -191,6 +244,9 @@ public class SpeakerBlockEntity extends BlockEntity {
         }
         if (tag.contains(KEY_CURVE)) {
             falloffCurve = FalloffCurve.fromString(tag.getString(KEY_CURVE));
+        }
+        if (tag.contains(KEY_REDSTONE_MODE)) {
+            redstoneMode = RedstoneMode.fromString(tag.getString(KEY_REDSTONE_MODE));
         }
         if (tag.contains(KEY_AUDIO_FILE)) {
             audioFile = tag.getString(KEY_AUDIO_FILE);
@@ -211,6 +267,25 @@ public class SpeakerBlockEntity extends BlockEntity {
     public void setLevel(Level level) {
         super.setLevel(level);
         loadTomlConfigIfReady();
+        if (level instanceof ServerLevel) {
+            needsInitialRedstoneSync = true;
+        }
+    }
+
+    public static void serverTick(Level level, BlockPos pos, BlockState state, SpeakerBlockEntity speaker) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        if (speaker.needsInitialRedstoneSync) {
+            speaker.needsInitialRedstoneSync = false;
+            speaker.syncRedstoneState(serverLevel, serverLevel.hasNeighborSignal(pos));
+        }
+
+        if (speaker.playing && speaker.playbackEndsAtTick >= 0L && serverLevel.getGameTime() >= speaker.playbackEndsAtTick) {
+            speaker.playing = false;
+            speaker.playbackEndsAtTick = -1L;
+        }
     }
 
     @Override

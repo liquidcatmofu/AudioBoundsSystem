@@ -7,6 +7,7 @@ import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.BoundsShape;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
+import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -33,7 +34,7 @@ public final class SpeakerTomlConfig {
         }
         try (CommentedFileConfig config = CommentedFileConfig.builder(path).sync().preserveInsertionOrder().build()) {
             config.load();
-            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getAudioFile(), speaker.isSubtitleEnabled(), speaker.getTrackTitle(), speaker.getSubtitle());
+            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getRedstoneMode(), speaker.getAudioFile(), speaker.isSubtitleEnabled(), speaker.getTrackTitle(), speaker.getSubtitle());
             config.save();
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to save speaker TOML config {}", path, e);
@@ -60,6 +61,7 @@ public final class SpeakerTomlConfig {
             speaker.applyLoadedConfig(
                     readBounds(config),
                     readFalloffCurve(config),
+                    readRedstoneMode(config),
                     readAudioFile(config),
                     readSubtitleEnabled(config),
                     readTrackTitle(config),
@@ -85,6 +87,10 @@ public final class SpeakerTomlConfig {
         return FalloffCurve.fromString(config.getOrElse("falloff.curve", FalloffCurve.LOGARITHMIC.name()));
     }
 
+    public static RedstoneMode readRedstoneMode(CommentedConfig config) {
+        return RedstoneMode.fromString(config.getOrElse("redstone.mode", RedstoneMode.LEVEL.name()));
+    }
+
     public static String readAudioFile(CommentedConfig config) {
         return config.getOrElse("audio.file", "");
     }
@@ -101,7 +107,7 @@ public final class SpeakerTomlConfig {
         return config.getOrElse("display.subtitle", "");
     }
 
-    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
+    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, RedstoneMode redstoneMode, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
         config.set("area.shape", bounds.getShape().name());
         config.setComment("area.shape", "Bounds shape: SPHERE, BOX, CYLINDER, or HEMISPHERE.");
         config.set("area.radius", bounds.getRadius());
@@ -115,6 +121,8 @@ public final class SpeakerTomlConfig {
 
         config.set("falloff.curve", curve.name());
         config.setComment("falloff.curve", "Falloff curve: LINEAR, LOGARITHMIC, SMOOTH_STEP, or INVERSE_SQUARE.");
+        config.set("redstone.mode", redstoneMode.name());
+        config.setComment("redstone.mode", "Redstone mode: LEVEL follows signal on/off, PULSE toggles playback on rising edge.");
 
         config.set("audio.file", audioFile == null ? "" : audioFile);
         config.setComment("audio.file", "Audio cache file name resolved under the ABS HTTP cache directory.");

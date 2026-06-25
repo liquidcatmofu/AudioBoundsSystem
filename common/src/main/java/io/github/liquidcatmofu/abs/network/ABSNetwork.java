@@ -7,6 +7,7 @@ import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.BoundsShape;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
+import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.core.BlockPos;
@@ -33,6 +34,7 @@ public final class ABSNetwork {
             double depth = buf.readDouble();
             double height = buf.readDouble();
             FalloffCurve curve = buf.readEnum(FalloffCurve.class);
+            RedstoneMode redstoneMode = buf.readEnum(RedstoneMode.class);
             String audioFile = buf.readUtf(256);
             boolean subtitleEnabled = buf.readBoolean();
             String trackTitle = buf.readUtf(128);
@@ -52,6 +54,7 @@ public final class ABSNetwork {
 
                 speaker.setBounds(new AudioBounds(shape, clampPositive(radius), clampPositive(width), clampPositive(depth), clampPositive(height)));
                 speaker.setFalloffCurve(curve);
+                speaker.setRedstoneMode(redstoneMode);
                 speaker.setAudioFile(audioFile);
                 speaker.setSubtitleEnabled(subtitleEnabled);
                 speaker.setTrackTitle(trackTitle);

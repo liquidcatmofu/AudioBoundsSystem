@@ -5,6 +5,7 @@ import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.BoundsShape;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
+import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
@@ -28,7 +29,7 @@ import java.util.List;
 public final class SpeakerConfigScreen extends Screen {
     private static final int PANEL_WIDTH = 300;
     private static final int ROW_HEIGHT = 24;
-    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 12 + 34;
+    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 13 + 34;
     private static final int SCREEN_MARGIN = 12;
 
     private final BlockPos pos;
@@ -36,6 +37,7 @@ public final class SpeakerConfigScreen extends Screen {
     private final List<PositionedWidget> positionedWidgets = new ArrayList<>();
     private BoundsShape shape;
     private FalloffCurve falloffCurve;
+    private RedstoneMode redstoneMode;
     private boolean subtitleEnabled;
     private int scrollOffset = 0;
     private EditBox radius;
@@ -55,6 +57,7 @@ public final class SpeakerConfigScreen extends Screen {
         AudioBounds bounds = speaker == null ? AudioBounds.DEFAULT : speaker.getBounds();
         this.shape = bounds.getShape();
         this.falloffCurve = speaker == null ? FalloffCurve.LOGARITHMIC : speaker.getFalloffCurve();
+        this.redstoneMode = speaker == null ? RedstoneMode.LEVEL : speaker.getRedstoneMode();
         this.subtitleEnabled = speaker == null || speaker.isSubtitleEnabled();
     }
 
@@ -81,27 +84,32 @@ public final class SpeakerConfigScreen extends Screen {
                 .withInitialValue(falloffCurve)
                 .create(x, y + ROW_HEIGHT * 6, PANEL_WIDTH, 20, Component.literal("Falloff"), (button, value) -> falloffCurve = value), ROW_HEIGHT * 6);
 
-        audioFile = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 7, PANEL_WIDTH - 110, 20, Component.literal("Audio file"));
+        addPositionedWidget(CycleButton.<RedstoneMode>builder(value -> Component.literal(value.name()))
+                .withValues(RedstoneMode.values())
+                .withInitialValue(redstoneMode)
+                .create(x, y + ROW_HEIGHT * 7, PANEL_WIDTH, 20, Component.literal("Redstone"), (button, value) -> redstoneMode = value), ROW_HEIGHT * 7);
+
+        audioFile = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 8, PANEL_WIDTH - 110, 20, Component.literal("Audio file"));
         audioFile.setMaxLength(256);
         audioFile.setValue(speaker == null ? "" : speaker.getAudioFile());
-        addPositionedWidget(audioFile, ROW_HEIGHT * 7);
+        addPositionedWidget(audioFile, ROW_HEIGHT * 8);
 
         addPositionedWidget(Button.builder(subtitleEnabledLabel(), button -> {
                     subtitleEnabled = !subtitleEnabled;
                     button.setMessage(subtitleEnabledLabel());
                 })
-                .bounds(x, y + ROW_HEIGHT * 8, PANEL_WIDTH, 20)
-                .build(), ROW_HEIGHT * 8);
+                .bounds(x, y + ROW_HEIGHT * 9, PANEL_WIDTH, 20)
+                .build(), ROW_HEIGHT * 9);
 
-        trackTitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 9, PANEL_WIDTH - 110, 20, Component.literal("Track title"));
+        trackTitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 10, PANEL_WIDTH - 110, 20, Component.literal("Track title"));
         trackTitle.setMaxLength(128);
         trackTitle.setValue(speaker == null ? "" : speaker.getTrackTitle());
-        addPositionedWidget(trackTitle, ROW_HEIGHT * 9);
+        addPositionedWidget(trackTitle, ROW_HEIGHT * 10);
 
-        subtitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 10, PANEL_WIDTH - 110, 20, Component.literal("Subtitle"));
+        subtitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 11, PANEL_WIDTH - 110, 20, Component.literal("Subtitle"));
         subtitle.setMaxLength(512);
         subtitle.setValue(speaker == null ? "" : speaker.getSubtitle());
-        addPositionedWidget(subtitle, ROW_HEIGHT * 10);
+        addPositionedWidget(subtitle, ROW_HEIGHT * 11);
 
         addPositionedWidget(Button.builder(Component.literal("Save"), button -> save())
                 .bounds(x + PANEL_WIDTH - 154, y + ROW_HEIGHT * 11 + 10, 74, 20)
@@ -122,11 +130,11 @@ public final class SpeakerConfigScreen extends Screen {
         drawLabel(graphics, "Width", x, y + ROW_HEIGHT * 3 + 6);
         drawLabel(graphics, "Height", x, y + ROW_HEIGHT * 4 + 6);
         drawLabel(graphics, "Depth", x, y + ROW_HEIGHT * 5 + 6);
-        drawLabel(graphics, "Audio file", x, y + ROW_HEIGHT * 7 + 6);
-        drawLabel(graphics, "Track title", x, y + ROW_HEIGHT * 9 + 6);
-        drawLabel(graphics, "Subtitle", x, y + ROW_HEIGHT * 10 + 6);
+        drawLabel(graphics, "Audio file", x, y + ROW_HEIGHT * 8 + 6);
+        drawLabel(graphics, "Track title", x, y + ROW_HEIGHT * 10 + 6);
+        drawLabel(graphics, "Subtitle", x, y + ROW_HEIGHT * 11 + 6);
         if (error != Component.empty()) {
-            graphics.drawString(this.font, error, x, y + ROW_HEIGHT * 11 - 2, 0xFF6666);
+            graphics.drawString(this.font, error, x, y + ROW_HEIGHT * 12 - 2, 0xFF6666);
         }
         super.render(graphics, mouseX, mouseY, partialTick);
     }
@@ -165,6 +173,7 @@ public final class SpeakerConfigScreen extends Screen {
         buf.writeDouble(parsedDepth);
         buf.writeDouble(parsedHeight);
         buf.writeEnum(falloffCurve);
+        buf.writeEnum(redstoneMode);
         buf.writeUtf(audioFile.getValue(), 256);
         buf.writeBoolean(subtitleEnabled);
         buf.writeUtf(trackTitle.getValue(), 128);
