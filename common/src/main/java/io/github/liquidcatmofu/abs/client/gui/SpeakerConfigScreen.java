@@ -29,7 +29,7 @@ import java.util.List;
 public final class SpeakerConfigScreen extends Screen {
     private static final int PANEL_WIDTH = 300;
     private static final int ROW_HEIGHT = 24;
-    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 13 + 34;
+    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 14 + 34;
     private static final int SCREEN_MARGIN = 12;
 
     private final BlockPos pos;
@@ -112,11 +112,11 @@ public final class SpeakerConfigScreen extends Screen {
         addPositionedWidget(subtitle, ROW_HEIGHT * 11);
 
         addPositionedWidget(Button.builder(Component.literal("Save"), button -> save())
-                .bounds(x + PANEL_WIDTH - 154, y + ROW_HEIGHT * 11 + 10, 74, 20)
-                .build(), ROW_HEIGHT * 11 + 10);
+                .bounds(x + PANEL_WIDTH - 154, y + ROW_HEIGHT * 12 + 4, 74, 20)
+                .build(), ROW_HEIGHT * 12 + 4);
         addPositionedWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
-                .bounds(x + PANEL_WIDTH - 74, y + ROW_HEIGHT * 11 + 10, 74, 20)
-                .build(), ROW_HEIGHT * 11 + 10);
+                .bounds(x + PANEL_WIDTH - 74, y + ROW_HEIGHT * 12 + 4, 74, 20)
+                .build(), ROW_HEIGHT * 12 + 4);
         updateWidgetPositions();
     }
 

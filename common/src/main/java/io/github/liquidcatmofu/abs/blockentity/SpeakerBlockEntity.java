@@ -111,6 +111,11 @@ public class SpeakerBlockEntity extends BlockEntity {
         this.subtitleEnabled = subtitleEnabled;
         this.trackTitle = trackTitle == null ? "" : trackTitle;
         this.subtitle = subtitle == null ? "" : subtitle;
+        setChanged();
+    }
+
+    public void syncConfigToClients() {
+        syncToClients();
     }
 
     public void syncRedstoneState(ServerLevel level, boolean powered) {
@@ -266,10 +271,7 @@ public class SpeakerBlockEntity extends BlockEntity {
     @Override
     public void setLevel(Level level) {
         super.setLevel(level);
-        loadTomlConfigIfReady();
-        if (level instanceof ServerLevel) {
-            needsInitialRedstoneSync = true;
-        }
+        needsInitialRedstoneSync = false;
     }
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, SpeakerBlockEntity speaker) {
@@ -283,8 +285,12 @@ public class SpeakerBlockEntity extends BlockEntity {
         }
 
         if (speaker.playing && speaker.playbackEndsAtTick >= 0L && serverLevel.getGameTime() >= speaker.playbackEndsAtTick) {
-            speaker.playing = false;
-            speaker.playbackEndsAtTick = -1L;
+            if (speaker.redstoneMode == RedstoneMode.LEVEL && speaker.redstonePowered) {
+                speaker.startPlaying(serverLevel);
+            } else {
+                speaker.playing = false;
+                speaker.playbackEndsAtTick = -1L;
+            }
         }
     }
 
@@ -305,6 +311,5 @@ public class SpeakerBlockEntity extends BlockEntity {
             return;
         }
         tomlLoaded = true;
-        SpeakerTomlConfig.load(level, this);
     }
 }
