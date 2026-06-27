@@ -114,6 +114,7 @@ public final class ABSLibrary {
         Set<String> toDelete = new LinkedHashSet<>();
         collectSubtree(id, byParent, toDelete);
         for (String fid : toDelete) {
+            LibraryAudio.purgeCacheForFolder(fid);   // 配下音声の abs_cache ogg を削除
             deleteDir(libraryRoot.resolve(fid));
         }
         return true;

@@ -80,6 +80,7 @@ function render() {
 
   renderFolderGrid(current);
   renderSettings(current);
+  renderAudioSection(current);
 }
 
 function renderBreadcrumb() {
@@ -163,6 +164,97 @@ function renderAllowedPlayers(list) {
   });
   container.querySelectorAll('.btn-remove').forEach(btn =>
     btn.addEventListener('click', () => removePlayer(btn.dataset.uuid)));
+}
+
+// ── audio ──────────────────────────────────────────────
+function renderAudioSection(current) {
+  const section = document.getElementById('audio-section');
+  if (!current) { section.hidden = true; return; }
+  section.hidden = false;
+  loadAudio(current.id);
+}
+
+async function loadAudio(folderId) {
+  const res = await api('GET', '/library/' + folderId + '/audio');
+  if (!res || !res.ok) return;
+  // ナビゲーションが変わっていたら破棄
+  if (currentId !== folderId) return;
+  renderAudioList(await res.json(), folderId);
+}
+
+function renderAudioList(entries, folderId) {
+  const list  = document.getElementById('audio-list');
+  const empty = document.getElementById('audio-empty');
+  list.innerHTML = '';
+  if (entries.length === 0) { empty.hidden = false; return; }
+  empty.hidden = true;
+
+  entries.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'audio-row';
+    row.innerHTML = `
+      <button class="btn-icon play" title="再生">▶</button>
+      <div class="audio-info">
+        <div class="audio-name">${esc(e.displayName)}</div>
+        <div class="audio-meta">${fmtDuration(e.durationTicks)} ・ <span class="mono">${esc(e.cacheFile)}</span></div>
+      </div>
+      <button class="btn-icon copy" title="ファイル名をコピー">⧉</button>
+      <button class="btn-icon del" title="削除">✕</button>
+      <audio preload="none" src="/api/library/${folderId}/audio/${e.id}/preview"></audio>`;
+
+    const audio = row.querySelector('audio');
+    const playBtn = row.querySelector('.play');
+    playBtn.addEventListener('click', () => {
+      if (audio.paused) {
+        document.querySelectorAll('#audio-list audio').forEach(a => { if (a !== audio) { a.pause(); } });
+        audio.play(); playBtn.textContent = '⏸';
+      } else { audio.pause(); playBtn.textContent = '▶'; }
+    });
+    audio.addEventListener('ended', () => { playBtn.textContent = '▶'; });
+    row.querySelector('.copy').addEventListener('click', () => copyText(e.cacheFile));
+    row.querySelector('.del').addEventListener('click', () => deleteAudio(folderId, e));
+    list.appendChild(row);
+  });
+}
+
+async function uploadAudio(file) {
+  if (!currentId || !file) return;
+  const status = document.getElementById('upload-status');
+  status.hidden = false;
+  status.textContent = `アップロード中: ${file.name} ...`;
+  try {
+    const res = await fetch('/api/library/' + currentId + '/audio', {
+      method: 'POST',
+      headers: { 'X-Filename': encodeURIComponent(file.name) },
+      body: file
+    });
+    if (res.status === 401) { showError('セッションが切れています。/abs ui を再実行してください。'); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      status.textContent = '失敗: ' + (err.error || res.status);
+      return;
+    }
+    status.textContent = `完了: ${file.name}`;
+    setTimeout(() => { status.hidden = true; }, 2500);
+    loadAudio(currentId);
+  } catch (e) {
+    status.textContent = 'アップロードに失敗しました。';
+  }
+}
+
+async function deleteAudio(folderId, entry) {
+  if (!confirm(`「${entry.displayName}」を削除しますか？`)) return;
+  const res = await api('DELETE', '/library/' + folderId + '/audio/' + entry.id);
+  if (res && res.ok) loadAudio(folderId);
+}
+
+function fmtDuration(ticks) {
+  const sec = Math.round((ticks || 0) / 20);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+function copyText(text) {
+  navigator.clipboard?.writeText(text);
 }
 
 // ── navigation ─────────────────────────────────────────
@@ -256,6 +348,11 @@ document.getElementById('btn-dialog-create').addEventListener('click', createFol
 document.getElementById('btn-save-name').addEventListener('click', saveDisplayName);
 document.getElementById('btn-add-player').addEventListener('click', addPlayer);
 document.getElementById('btn-delete-folder').addEventListener('click', deleteFolder);
+document.getElementById('audio-upload').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) uploadAudio(file);
+  e.target.value = '';
+});
 document.getElementById('dialog-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDialog();
 });

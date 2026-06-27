@@ -31,6 +31,20 @@
     <div id="folder-list" class="folder-grid"></div>
     <p id="folders-empty" class="empty-msg" hidden>フォルダがありません。</p>
 
+    <!-- 音声ファイル（フォルダ内のみ表示） -->
+    <section id="audio-section" hidden>
+      <div class="section-header">
+        <h2>音声ファイル</h2>
+        <label class="btn btn-primary upload-label">
+          + アップロード
+          <input id="audio-upload" type="file" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac" hidden>
+        </label>
+      </div>
+      <p id="upload-status" class="hint" hidden></p>
+      <div id="audio-list" class="audio-list"></div>
+      <p id="audio-empty" class="empty-msg" hidden>音声ファイルがありません。</p>
+    </section>
+
     <!-- 設定パネル -->
     <section id="settings-panel" hidden>
       <div class="card">

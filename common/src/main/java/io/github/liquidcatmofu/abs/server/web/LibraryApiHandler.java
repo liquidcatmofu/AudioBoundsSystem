@@ -8,14 +8,20 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.library.ABSLibrary;
+import io.github.liquidcatmofu.abs.library.AudioEntry;
 import io.github.liquidcatmofu.abs.library.FolderAccess;
+import io.github.liquidcatmofu.abs.library.LibraryAudio;
 import io.github.liquidcatmofu.abs.library.LibraryFolder;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,6 +70,8 @@ public class LibraryApiHandler implements HttpHandler {
             }
             if (extra.equals("players")) {
                 handlePlayers(exchange, method, id, playerUuid, isOp);
+            } else if (extra.equals("audio") || extra.startsWith("audio/")) {
+                handleAudio(exchange, method, id, extra, playerUuid, isOp);
             } else if (extra.isEmpty()) {
                 handleFolder(exchange, method, id, playerUuid, isOp);
             } else {
@@ -185,6 +193,101 @@ public class LibraryApiHandler implements HttpHandler {
         body.getAsJsonArray("allowedPlayers").forEach(el -> folder.allowedPlayers.add(el.getAsString()));
         ABSLibrary.saveFolder(folder);
         WebAuthHelper.sendJson(exchange, 200, GSON.toJson(folder));
+    }
+
+    private static final int MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+
+    // /api/library/{folderId}/audio[/{audioId}[/preview]]
+    private void handleAudio(HttpExchange exchange, String method, String folderId, String extra,
+                             UUID playerUuid, boolean isOp) throws IOException, InterruptedException {
+        LibraryFolder folder = ABSLibrary.loadFolder(folderId).orElse(null);
+        if (folder == null) {
+            WebAuthHelper.sendError(exchange, 404, "Folder not found");
+            return;
+        }
+        if (!ABSLibrary.access(folder, playerUuid, isOp).canView()) {
+            WebAuthHelper.sendError(exchange, 403, "Forbidden");
+            return;
+        }
+
+        String[] seg = extra.split("/");
+        if (seg.length == 1) {
+            // /audio — list / upload
+            if ("GET".equals(method)) {
+                WebAuthHelper.sendJson(exchange, 200, GSON.toJson(LibraryAudio.list(folderId)));
+            } else if ("POST".equals(method)) {
+                String rawName = exchange.getRequestHeaders().getFirst("X-Filename");
+                if (rawName == null || rawName.isBlank()) {
+                    WebAuthHelper.sendError(exchange, 400, "Missing X-Filename header");
+                    return;
+                }
+                String filename = URLDecoder.decode(rawName, StandardCharsets.UTF_8);
+                byte[] data = exchange.getRequestBody().readAllBytes();
+                if (data.length == 0) {
+                    WebAuthHelper.sendError(exchange, 400, "Empty upload");
+                    return;
+                }
+                if (data.length > MAX_UPLOAD_BYTES) {
+                    WebAuthHelper.sendError(exchange, 413, "File too large (max 64MB)");
+                    return;
+                }
+                try {
+                    AudioEntry entry = LibraryAudio.importAudio(folderId, data, filename, playerUuid);
+                    WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
+                } catch (IOException e) {
+                    AudioBoundsSystem.LOGGER.error("ABS: audio import failed", e);
+                    WebAuthHelper.sendError(exchange, 500, "変換に失敗しました（ffmpeg を確認してください）");
+                }
+            } else {
+                WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
+            }
+            return;
+        }
+
+        String audioId = seg[1];
+        if (!ABSLibrary.isSafeId(audioId)) {
+            WebAuthHelper.sendError(exchange, 400, "Invalid audio id");
+            return;
+        }
+
+        if (seg.length == 2) {
+            // /audio/{audioId} — get / delete
+            if ("GET".equals(method)) {
+                AudioEntry entry = LibraryAudio.load(folderId, audioId).orElse(null);
+                if (entry == null) WebAuthHelper.sendError(exchange, 404, "Audio not found");
+                else WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+            } else if ("DELETE".equals(method)) {
+                boolean ok = LibraryAudio.delete(folderId, audioId);
+                if (ok) WebAuthHelper.sendJson(exchange, 200, "{\"deleted\":true}");
+                else WebAuthHelper.sendError(exchange, 404, "Audio not found");
+            } else {
+                WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
+            }
+        } else if (seg.length == 3 && "preview".equals(seg[2]) && "GET".equals(method)) {
+            servePreview(exchange, folderId, audioId);
+        } else {
+            WebAuthHelper.sendError(exchange, 404, "Not Found");
+        }
+    }
+
+    private void servePreview(HttpExchange exchange, String folderId, String audioId) throws IOException {
+        AudioEntry entry = LibraryAudio.load(folderId, audioId).orElse(null);
+        if (entry == null) {
+            WebAuthHelper.sendError(exchange, 404, "Audio not found");
+            return;
+        }
+        Path ogg = LibraryAudio.cacheFilePath(entry);
+        if (!Files.isRegularFile(ogg)) {
+            WebAuthHelper.sendError(exchange, 404, "Audio file missing");
+            return;
+        }
+        byte[] bytes = Files.readAllBytes(ogg);
+        exchange.getResponseHeaders().set("Content-Type", "audio/ogg");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
     }
 
     private JsonObject readJson(HttpExchange exchange) {
