@@ -81,6 +81,7 @@ function render() {
   renderFolderGrid(current);
   renderSettings(current);
   renderAudioSection(current);
+  renderTtsSection(current);
 }
 
 function renderBreadcrumb() {
@@ -257,6 +258,177 @@ function copyText(text) {
   navigator.clipboard?.writeText(text);
 }
 
+// ── TTS ────────────────────────────────────────────────
+let ttsMeta = null;   // { installed, available, engines:[...] }
+
+function renderTtsSection(current) {
+  const section = document.getElementById('tts-section');
+  if (!current) { section.hidden = true; return; }
+  section.hidden = false;
+  loadTtsMeta();
+  loadTts(current.id);
+}
+
+async function loadTtsMeta() {
+  if (ttsMeta) { applyTtsMeta(); return; }
+  const res = await api('GET', '/tts');
+  if (!res || !res.ok) return;
+  ttsMeta = await res.json();
+  applyTtsMeta();
+}
+function applyTtsMeta() {
+  const btn = document.getElementById('btn-new-tts');
+  const note = document.getElementById('tts-unavailable');
+  if (!ttsMeta.installed) {
+    btn.disabled = true; note.hidden = false;
+    note.textContent = 'TTS アドオンが導入されていません。';
+  } else if (!ttsMeta.available) {
+    btn.disabled = true; note.hidden = false;
+    note.textContent = 'TTS エンジン（VOICEVOX）に接続できません。エンジンを起動してください。';
+  } else {
+    btn.disabled = false; note.hidden = true;
+  }
+}
+
+async function loadTts(folderId) {
+  const res = await api('GET', '/library/' + folderId + '/tts');
+  if (!res || !res.ok) return;
+  if (currentId !== folderId) return;
+  renderTtsList(await res.json(), folderId);
+}
+
+function renderTtsList(entries, folderId) {
+  const list  = document.getElementById('tts-list');
+  const empty = document.getElementById('tts-empty');
+  list.innerHTML = '';
+  if (entries.length === 0) { empty.hidden = false; return; }
+  empty.hidden = true;
+
+  entries.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'audio-row';
+    row.innerHTML = `
+      <button class="btn-icon play" title="再生">▶</button>
+      <div class="audio-info">
+        <div class="audio-name">${esc(e.displayName)}</div>
+        <div class="audio-meta">${esc(e.speakerName || e.speakerId)} ・ ${fmtDuration(e.durationTicks)} ・ <span class="mono">${esc(e.cacheFile)}</span></div>
+      </div>
+      <button class="btn-icon copy" title="ファイル名をコピー">⧉</button>
+      <button class="btn-icon del" title="削除">✕</button>
+      <audio preload="none" src="/api/library/${folderId}/tts/${e.id}/preview"></audio>`;
+    const audio = row.querySelector('audio');
+    const playBtn = row.querySelector('.play');
+    playBtn.addEventListener('click', () => {
+      if (audio.paused) {
+        document.querySelectorAll('#tts-list audio, #audio-list audio').forEach(a => { if (a !== audio) a.pause(); });
+        audio.play(); playBtn.textContent = '⏸';
+      } else { audio.pause(); playBtn.textContent = '▶'; }
+    });
+    audio.addEventListener('ended', () => { playBtn.textContent = '▶'; });
+    row.querySelector('.copy').addEventListener('click', () => copyText(e.cacheFile));
+    row.querySelector('.del').addEventListener('click', () => deleteTts(folderId, e));
+    list.appendChild(row);
+  });
+}
+
+async function deleteTts(folderId, entry) {
+  if (!confirm(`「${entry.displayName}」を削除しますか？`)) return;
+  const res = await api('DELETE', '/library/' + folderId + '/tts/' + entry.id);
+  if (res && res.ok) loadTts(folderId);
+}
+
+// ── TTS dialog ─────────────────────────────────────────
+function openTtsDialog() {
+  if (!currentId || !ttsMeta || !ttsMeta.available) return;
+  const engineSel = document.getElementById('tts-engine');
+  engineSel.innerHTML = '';
+  ttsMeta.engines.forEach(en => {
+    const o = document.createElement('option');
+    o.value = en.id; o.textContent = en.name;
+    engineSel.appendChild(o);
+  });
+  document.getElementById('tts-text').value = '';
+  document.getElementById('tts-name').value = '';
+  document.getElementById('tts-error').hidden = true;
+  populateEngine();
+  document.getElementById('tts-overlay').hidden = false;
+}
+function closeTtsDialog() {
+  document.getElementById('tts-overlay').hidden = true;
+}
+function currentEngine() {
+  const id = document.getElementById('tts-engine').value;
+  return ttsMeta.engines.find(e => e.id === id);
+}
+function populateEngine() {
+  const engine = currentEngine();
+  if (!engine) return;
+  // 話者
+  const spSel = document.getElementById('tts-speaker');
+  spSel.innerHTML = '';
+  (engine.speakers || []).forEach(sp => {
+    const o = document.createElement('option');
+    o.value = sp.id; o.textContent = sp.name;
+    spSel.appendChild(o);
+  });
+  // パラメータ
+  const box = document.getElementById('tts-params');
+  box.innerHTML = '';
+  (engine.params || []).forEach(p => {
+    const wrap = document.createElement('div');
+    wrap.className = 'param-row';
+    wrap.innerHTML = `
+      <label>${esc(p.label)} <span class="param-val" id="pv-${p.key}">${p.def}</span></label>
+      <input type="range" data-key="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.def}">`;
+    const range = wrap.querySelector('input');
+    range.addEventListener('input', () => {
+      document.getElementById('pv-' + p.key).textContent = range.value;
+    });
+    box.appendChild(wrap);
+  });
+}
+async function synthesizeTts() {
+  const engine = currentEngine();
+  const speakerSel = document.getElementById('tts-speaker');
+  const text = document.getElementById('tts-text').value.trim();
+  const errEl = document.getElementById('tts-error');
+  if (!text) { ttsError('セリフを入力してください。'); return; }
+  if (!speakerSel.value) { ttsError('話者を選択してください。'); return; }
+
+  const params = {};
+  document.querySelectorAll('#tts-params input[type=range]').forEach(r => {
+    params[r.dataset.key] = parseFloat(r.value);
+  });
+
+  const btn = document.getElementById('btn-tts-synth');
+  btn.disabled = true; btn.textContent = '合成中...';
+  errEl.hidden = true;
+  try {
+    const res = await api('POST', '/library/' + currentId + '/tts', {
+      engineId: engine.id,
+      speakerId: speakerSel.value,
+      speakerName: speakerSel.options[speakerSel.selectedIndex].text,
+      text,
+      displayName: document.getElementById('tts-name').value.trim(),
+      params
+    });
+    if (!res) return;
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      ttsError(e.error || '合成に失敗しました。');
+      return;
+    }
+    closeTtsDialog();
+    loadTts(currentId);
+  } finally {
+    btn.disabled = false; btn.textContent = '合成して保存';
+  }
+}
+function ttsError(msg) {
+  const el = document.getElementById('tts-error');
+  el.textContent = msg; el.hidden = false;
+}
+
 // ── navigation ─────────────────────────────────────────
 function navigate(id) {
   currentId = id;
@@ -352,6 +524,13 @@ document.getElementById('audio-upload').addEventListener('change', e => {
   const file = e.target.files[0];
   if (file) uploadAudio(file);
   e.target.value = '';
+});
+document.getElementById('btn-new-tts').addEventListener('click', openTtsDialog);
+document.getElementById('btn-tts-cancel').addEventListener('click', closeTtsDialog);
+document.getElementById('btn-tts-synth').addEventListener('click', synthesizeTts);
+document.getElementById('tts-engine').addEventListener('change', populateEngine);
+document.getElementById('tts-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeTtsDialog();
 });
 document.getElementById('dialog-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDialog();

@@ -6,12 +6,13 @@ import com.mojang.brigadier.context.CommandContext;
 import dev.architectury.event.events.common.CommandRegistrationEvent;
 import io.github.liquidcatmofu.abs.tts.TTSAddon;
 import io.github.liquidcatmofu.abs.tts.TTSProviderRegistry;
-import io.github.liquidcatmofu.abs.tts.api.SynthesisResult;
 import io.github.liquidcatmofu.abs.tts.api.TTSProvider;
+import io.github.liquidcatmofu.abs.tts.cache.TTSAudioCache;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -58,19 +59,19 @@ public final class TTSAddonCommand {
 
         CompletableFuture.supplyAsync(() -> {
             try {
-                return provider.synthesize(text, speakerId);
+                byte[] ogg = provider.synthesizeToOgg(text, speakerId, Map.of());
+                return TTSAudioCache.save(ogg, speakerId, text);
             } catch (Exception e) {
                 TTSAddon.LOGGER.error("ABS TTS: synthesis failed", e);
                 return null;
             }
-        }).thenAccept(result -> {
-            if (result == null) {
+        }).thenAccept(cacheFile -> {
+            if (cacheFile == null) {
                 source.sendFailure(Component.literal("[ABS TTS] 合成失敗。ログを確認してください。"));
                 return;
             }
-            SynthesisResult sr = result;
             source.sendSuccess(
-                () -> Component.literal("[ABS TTS] 合成完了: " + sr.cacheFileName()
+                () -> Component.literal("[ABS TTS] 合成完了: " + cacheFile
                     + "  → SpeakerBlock の audioFile にこのパスを設定してください。"),
                 false
             );

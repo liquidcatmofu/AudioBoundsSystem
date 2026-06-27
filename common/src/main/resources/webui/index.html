@@ -45,6 +45,17 @@
       <p id="audio-empty" class="empty-msg" hidden>音声ファイルがありません。</p>
     </section>
 
+    <!-- TTS セリフ（フォルダ内・アドオン導入時のみ表示） -->
+    <section id="tts-section" hidden>
+      <div class="section-header">
+        <h2>TTS セリフ</h2>
+        <button id="btn-new-tts" class="btn btn-primary">+ セリフを合成</button>
+      </div>
+      <p id="tts-unavailable" class="hint" hidden></p>
+      <div id="tts-list" class="audio-list"></div>
+      <p id="tts-empty" class="empty-msg" hidden>セリフがありません。</p>
+    </section>
+
     <!-- 設定パネル -->
     <section id="settings-panel" hidden>
       <div class="card">
@@ -83,6 +94,31 @@
       <div class="dialog-actions">
         <button id="btn-dialog-cancel" class="btn btn-ghost">キャンセル</button>
         <button id="btn-dialog-create" class="btn btn-primary">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TTS 合成ダイアログ -->
+  <div id="tts-overlay" class="overlay" hidden>
+    <div class="dialog dialog-wide">
+      <h3>セリフを合成</h3>
+      <label>エンジン
+        <select id="tts-engine" class="input"></select>
+      </label>
+      <label>話者
+        <select id="tts-speaker" class="input"></select>
+      </label>
+      <label>セリフ
+        <textarea id="tts-text" class="input" rows="3" placeholder="読み上げるテキスト"></textarea>
+      </label>
+      <label>表示名（空欄ならセリフ先頭から自動）
+        <input id="tts-name" type="text" class="input" placeholder="（自動）">
+      </label>
+      <div id="tts-params"></div>
+      <p id="tts-error" class="error-msg" hidden></p>
+      <div class="dialog-actions">
+        <button id="btn-tts-cancel" class="btn btn-ghost">キャンセル</button>
+        <button id="btn-tts-synth" class="btn btn-primary">合成して保存</button>
       </div>
     </div>
   </div>

@@ -192,3 +192,12 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
 .dialog h3 { font-size: 1.1rem; }
 .dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; color: var(--text-muted); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.dialog-wide { width: 480px; max-height: 90vh; overflow-y: auto; }
+
+textarea.input { resize: vertical; font-family: inherit; }
+select.input { cursor: pointer; }
+
+.param-row { margin-top: 6px; }
+.param-row label { flex-direction: row; justify-content: space-between; color: var(--text); font-size: 0.85rem; }
+.param-row input[type=range] { width: 100%; margin-top: 4px; accent-color: var(--accent2); }
+.param-val { color: var(--accent2); font-family: monospace; }

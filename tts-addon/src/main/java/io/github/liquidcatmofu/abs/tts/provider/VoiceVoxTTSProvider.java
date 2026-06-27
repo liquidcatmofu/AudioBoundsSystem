@@ -1,13 +1,15 @@
 package io.github.liquidcatmofu.abs.tts.provider;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.liquidcatmofu.abs.tts.TTSAddon;
-import io.github.liquidcatmofu.abs.tts.api.SynthesisResult;
 import io.github.liquidcatmofu.abs.tts.api.TTSProvider;
-import io.github.liquidcatmofu.abs.tts.cache.TTSAudioCache;
 import io.github.liquidcatmofu.abs.tts.config.TTSConfig;
 import io.github.liquidcatmofu.abs.tts.transcode.FfmpegTranscoder;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSParam;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSSpeaker;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -15,9 +17,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 public class VoiceVoxTTSProvider implements TTSProvider {
     private static final String ID = "voicevox";
+    /** VOICEVOX audio_query の調整可能フィールド */
+    private static final String[] PARAM_KEYS = { "speedScale", "pitchScale", "intonationScale", "volumeScale" };
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -28,83 +36,101 @@ public class VoiceVoxTTSProvider implements TTSProvider {
     }
 
     @Override
+    public String getDisplayName() {
+        return "VOICEVOX";
+    }
+
+    @Override
     public boolean isAvailable() {
         try {
-            String base = TTSConfig.get().voicevoxUrl();
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(base + "/version"))
+                    .uri(URI.create(TTSConfig.get().voicevoxUrl() + "/version"))
                     .timeout(Duration.ofSeconds(3))
-                    .GET()
-                    .build();
-            HttpResponse<Void> res = http.send(req, HttpResponse.BodyHandlers.discarding());
-            return res.statusCode() == 200;
+                    .GET().build();
+            return http.send(req, HttpResponse.BodyHandlers.discarding()).statusCode() == 200;
         } catch (Exception e) {
             return false;
         }
     }
 
     @Override
-    public SynthesisResult synthesize(String text, String speakerId) throws IOException {
-        if (TTSAudioCache.exists(speakerId, text)) {
-            String cached = "tts/" + TTSAudioCache.resolve(speakerId, text).getFileName().toString();
-            TTSAddon.LOGGER.info("ABS TTS: cache hit for speaker={} text={}", speakerId, text);
-            return new SynthesisResult(cached);
-        }
+    public List<TTSSpeaker> listSpeakers() {
+        List<TTSSpeaker> speakers = new ArrayList<>();
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(TTSConfig.get().voicevoxUrl() + "/speakers"))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() != 200) return speakers;
 
+            JsonArray arr = JsonParser.parseString(res.body()).getAsJsonArray();
+            for (var el : arr) {
+                JsonObject sp = el.getAsJsonObject();
+                String charName = sp.get("name").getAsString();
+                JsonArray styles = sp.getAsJsonArray("styles");
+                for (var st : styles) {
+                    JsonObject style = st.getAsJsonObject();
+                    String id = style.get("id").getAsString();
+                    String styleName = style.has("name") ? style.get("name").getAsString() : "";
+                    speakers.add(new TTSSpeaker(id, charName + " / " + styleName));
+                }
+            }
+        } catch (Exception e) {
+            TTSAddon.LOGGER.warn("ABS TTS: failed to fetch VOICEVOX speakers: {}", e.getMessage());
+        }
+        return speakers;
+    }
+
+    @Override
+    public List<TTSParam> paramSchema() {
+        return List.of(
+            new TTSParam("speedScale",      "速度", 0.5,   2.0, 0.05, 1.0),
+            new TTSParam("pitchScale",      "ピッチ", -0.15, 0.15, 0.01, 0.0),
+            new TTSParam("intonationScale", "抑揚", 0.0,   2.0, 0.05, 1.0),
+            new TTSParam("volumeScale",     "音量", 0.0,   2.0, 0.05, 1.0)
+        );
+    }
+
+    @Override
+    public byte[] synthesizeToOgg(String text, String speakerId, Map<String, Double> params) throws Exception {
         String base = TTSConfig.get().voicevoxUrl();
         String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8);
 
-        try {
-            // Step 1: AudioQuery 取得
-            String audioQueryJson = fetchAudioQuery(base, encodedText, speakerId);
-
-            // Step 2: WAV 合成
-            byte[] wavBytes = fetchSynthesis(base, speakerId, audioQueryJson);
-            TTSAddon.LOGGER.info("ABS TTS: synthesized {} bytes WAV", wavBytes.length);
-
-            // Step 3: WAV → Ogg 変換
-            byte[] oggBytes = FfmpegTranscoder.toOgg(wavBytes, TTSConfig.get().ffmpegPath());
-
-            // Step 4: キャッシュ保存
-            String fileName = TTSAudioCache.save(oggBytes, speakerId, text);
-            return new SynthesisResult(fileName);
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("TTS synthesis interrupted", e);
-        }
-    }
-
-    private String fetchAudioQuery(String base, String encodedText, String speakerId)
-            throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder()
+        // 1. audio_query
+        HttpRequest queryReq = HttpRequest.newBuilder()
                 .uri(URI.create(base + "/audio_query?text=" + encodedText + "&speaker=" + speakerId))
                 .timeout(Duration.ofSeconds(30))
-                .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
-
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (res.statusCode() != 200) {
-            throw new IOException("VOICEVOX /audio_query failed: HTTP " + res.statusCode() + " " + res.body());
+        HttpResponse<String> queryRes = http.send(queryReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (queryRes.statusCode() != 200) {
+            throw new RuntimeException("VOICEVOX /audio_query failed: HTTP " + queryRes.statusCode());
         }
-        return res.body();
-    }
 
-    private byte[] fetchSynthesis(String base, String speakerId, String audioQueryJson)
-            throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder()
+        // 2. パラメータを適用
+        JsonObject query = JsonParser.parseString(queryRes.body()).getAsJsonObject();
+        if (params != null) {
+            for (String key : PARAM_KEYS) {
+                Double v = params.get(key);
+                if (v != null) query.addProperty(key, v);
+            }
+        }
+
+        // 3. synthesis → WAV
+        HttpRequest synthReq = HttpRequest.newBuilder()
                 .uri(URI.create(base + "/synthesis?speaker=" + speakerId))
                 .timeout(Duration.ofSeconds(60))
                 .header("Content-Type", "application/json")
                 .header("Accept", "audio/wav")
-                .POST(HttpRequest.BodyPublishers.ofString(audioQueryJson, StandardCharsets.UTF_8))
+                .POST(HttpRequest.BodyPublishers.ofString(query.toString(), StandardCharsets.UTF_8))
                 .build();
-
-        HttpResponse<byte[]> res = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
-        if (res.statusCode() != 200) {
-            throw new IOException("VOICEVOX /synthesis failed: HTTP " + res.statusCode());
+        HttpResponse<byte[]> synthRes = http.send(synthReq, HttpResponse.BodyHandlers.ofByteArray());
+        if (synthRes.statusCode() != 200) {
+            throw new RuntimeException("VOICEVOX /synthesis failed: HTTP " + synthRes.statusCode());
         }
-        return res.body();
+
+        // 4. WAV → Ogg
+        return FfmpegTranscoder.toOgg(synthRes.body(), TTSConfig.get().ffmpegPath());
     }
 }

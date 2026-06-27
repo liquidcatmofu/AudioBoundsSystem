@@ -5,6 +5,7 @@ import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.server.web.AuthApiHandler;
 import io.github.liquidcatmofu.abs.server.web.LibraryApiHandler;
 import io.github.liquidcatmofu.abs.server.web.MeApiHandler;
+import io.github.liquidcatmofu.abs.server.web.TtsApiHandler;
 import io.github.liquidcatmofu.abs.server.web.WebUIHandler;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -32,6 +33,7 @@ public class ABSHttpServer {
         server.createContext("/audio",       new AudioRequestHandler());
         server.createContext("/api/auth",    new AuthApiHandler());
         server.createContext("/api/me",      new MeApiHandler(mcServer));
+        server.createContext("/api/tts",     new TtsApiHandler());
         server.createContext("/api/library", new LibraryApiHandler(mcServer));
         server.createContext("/ui",          new WebUIHandler());
         server.setExecutor(Executors.newFixedThreadPool(8));

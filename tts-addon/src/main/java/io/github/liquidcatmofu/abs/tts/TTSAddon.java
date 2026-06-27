@@ -4,6 +4,7 @@ import dev.architectury.event.events.common.LifecycleEvent;
 import io.github.liquidcatmofu.abs.tts.cache.TTSAudioCache;
 import io.github.liquidcatmofu.abs.tts.command.TTSAddonCommand;
 import io.github.liquidcatmofu.abs.tts.provider.VoiceVoxTTSProvider;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSBridgeRegistry;
 import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +17,7 @@ public final class TTSAddon {
 
     public static void init() {
         TTSProviderRegistry.register(new VoiceVoxTTSProvider());
+        TTSBridgeRegistry.set(new AddonTTSBridge());
 
         LifecycleEvent.SERVER_STARTING.register(server ->
             TTSAudioCache.init(server.getWorldPath(LevelResource.ROOT))

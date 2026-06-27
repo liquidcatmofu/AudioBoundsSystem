@@ -12,6 +12,11 @@ import io.github.liquidcatmofu.abs.library.AudioEntry;
 import io.github.liquidcatmofu.abs.library.FolderAccess;
 import io.github.liquidcatmofu.abs.library.LibraryAudio;
 import io.github.liquidcatmofu.abs.library.LibraryFolder;
+import io.github.liquidcatmofu.abs.library.LibraryTts;
+import io.github.liquidcatmofu.abs.library.TtsEntry;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSBridge;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSBridgeRegistry;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -72,6 +77,8 @@ public class LibraryApiHandler implements HttpHandler {
                 handlePlayers(exchange, method, id, playerUuid, isOp);
             } else if (extra.equals("audio") || extra.startsWith("audio/")) {
                 handleAudio(exchange, method, id, extra, playerUuid, isOp);
+            } else if (extra.equals("tts") || extra.startsWith("tts/")) {
+                handleTts(exchange, method, id, extra, playerUuid, isOp);
             } else if (extra.isEmpty()) {
                 handleFolder(exchange, method, id, playerUuid, isOp);
             } else {
@@ -276,7 +283,101 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 404, "Audio not found");
             return;
         }
-        Path ogg = LibraryAudio.cacheFilePath(entry);
+        serveOgg(exchange, LibraryAudio.cacheFilePath(entry));
+    }
+
+    // /api/library/{folderId}/tts[/{id}[/preview]]
+    private void handleTts(HttpExchange exchange, String method, String folderId, String extra,
+                           UUID playerUuid, boolean isOp) throws IOException {
+        LibraryFolder folder = ABSLibrary.loadFolder(folderId).orElse(null);
+        if (folder == null) {
+            WebAuthHelper.sendError(exchange, 404, "Folder not found");
+            return;
+        }
+        if (!ABSLibrary.access(folder, playerUuid, isOp).canView()) {
+            WebAuthHelper.sendError(exchange, 403, "Forbidden");
+            return;
+        }
+
+        String[] seg = extra.split("/");
+        if (seg.length == 1) {
+            if ("GET".equals(method)) {
+                WebAuthHelper.sendJson(exchange, 200, GSON.toJson(LibraryTts.list(folderId)));
+            } else if ("POST".equals(method)) {
+                synthesizeTts(exchange, folderId, playerUuid);
+            } else {
+                WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
+            }
+            return;
+        }
+
+        String ttsId = seg[1];
+        if (!ABSLibrary.isSafeId(ttsId)) {
+            WebAuthHelper.sendError(exchange, 400, "Invalid tts id");
+            return;
+        }
+        if (seg.length == 2) {
+            if ("GET".equals(method)) {
+                TtsEntry entry = LibraryTts.load(folderId, ttsId).orElse(null);
+                if (entry == null) WebAuthHelper.sendError(exchange, 404, "Not found");
+                else WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+            } else if ("DELETE".equals(method)) {
+                if (LibraryTts.delete(folderId, ttsId)) WebAuthHelper.sendJson(exchange, 200, "{\"deleted\":true}");
+                else WebAuthHelper.sendError(exchange, 404, "Not found");
+            } else {
+                WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
+            }
+        } else if (seg.length == 3 && "preview".equals(seg[2]) && "GET".equals(method)) {
+            TtsEntry entry = LibraryTts.load(folderId, ttsId).orElse(null);
+            if (entry == null) { WebAuthHelper.sendError(exchange, 404, "Not found"); return; }
+            serveOgg(exchange, LibraryTts.cacheFilePath(entry));
+        } else {
+            WebAuthHelper.sendError(exchange, 404, "Not Found");
+        }
+    }
+
+    private void synthesizeTts(HttpExchange exchange, String folderId, UUID playerUuid) throws IOException {
+        TTSBridge bridge = TTSBridgeRegistry.get();
+        if (bridge == null) {
+            WebAuthHelper.sendError(exchange, 503, "TTS アドオンが導入されていません");
+            return;
+        }
+        JsonObject body = readJson(exchange);
+        if (body == null || !body.has("engineId") || !body.has("speakerId") || !body.has("text")) {
+            WebAuthHelper.sendError(exchange, 400, "Missing engineId/speakerId/text");
+            return;
+        }
+        String text = body.get("text").getAsString().trim();
+        if (text.isEmpty()) {
+            WebAuthHelper.sendError(exchange, 400, "text must not be empty");
+            return;
+        }
+
+        TTSSynthesisRequest req = new TTSSynthesisRequest();
+        req.engineId = body.get("engineId").getAsString();
+        req.speakerId = body.get("speakerId").getAsString();
+        req.text = text;
+        if (body.has("params") && body.get("params").isJsonObject()) {
+            for (var e : body.getAsJsonObject("params").entrySet()) {
+                try {
+                    req.params.put(e.getKey(), e.getValue().getAsDouble());
+                } catch (Exception ignored) {}
+            }
+        }
+        String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
+        String speakerName = body.has("speakerName") ? body.get("speakerName").getAsString() : null;
+
+        try {
+            byte[] ogg = bridge.synthesize(req);
+            TtsEntry entry = LibraryTts.create(folderId, displayName, req, speakerName, ogg, playerUuid);
+            WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
+        } catch (Exception e) {
+            AudioBoundsSystem.LOGGER.error("ABS: TTS synthesis failed", e);
+            WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
+        }
+    }
+
+    private void serveOgg(HttpExchange exchange, Path ogg) throws IOException {
         if (!Files.isRegularFile(ogg)) {
             WebAuthHelper.sendError(exchange, 404, "Audio file missing");
             return;

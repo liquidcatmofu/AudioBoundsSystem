@@ -115,6 +115,7 @@ public final class ABSLibrary {
         collectSubtree(id, byParent, toDelete);
         for (String fid : toDelete) {
             LibraryAudio.purgeCacheForFolder(fid);   // 配下音声の abs_cache ogg を削除
+            LibraryTts.purgeCacheForFolder(fid);     // 配下 TTS の abs_cache ogg を削除
             deleteDir(libraryRoot.resolve(fid));
         }
         return true;
