@@ -2,6 +2,10 @@ package io.github.liquidcatmofu.abs.server;
 
 import com.sun.net.httpserver.HttpServer;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
+import io.github.liquidcatmofu.abs.server.web.AuthApiHandler;
+import io.github.liquidcatmofu.abs.server.web.LibraryApiHandler;
+import io.github.liquidcatmofu.abs.server.web.MeApiHandler;
+import io.github.liquidcatmofu.abs.server.web.WebUIHandler;
 import net.minecraft.server.MinecraftServer;
 
 import java.io.IOException;
@@ -24,8 +28,12 @@ public class ABSHttpServer {
         Files.createDirectories(cacheDir);
 
         server = HttpServer.create(new InetSocketAddress(DEFAULT_PORT), 0);
-        server.createContext("/audio", new AudioRequestHandler());
-        server.setExecutor(Executors.newFixedThreadPool(2));
+        server.createContext("/audio",       new AudioRequestHandler());
+        server.createContext("/api/auth",    new AuthApiHandler());
+        server.createContext("/api/me",      new MeApiHandler(mcServer));
+        server.createContext("/api/library", new LibraryApiHandler(mcServer));
+        server.createContext("/ui",          new WebUIHandler());
+        server.setExecutor(Executors.newFixedThreadPool(8));
         server.start();
 
         AudioBoundsSystem.LOGGER.info("ABS HTTP Server started on port {}", DEFAULT_PORT);

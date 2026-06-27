@@ -1,5 +1,6 @@
 package io.github.liquidcatmofu.abs;
 
+import io.github.liquidcatmofu.abs.command.ABSCommands;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.init.ABSBlocks;
 import io.github.liquidcatmofu.abs.init.ABSCreativeTabs;
@@ -20,5 +21,6 @@ public final class AudioBoundsSystem {
         ABSCreativeTabs.register();
         ABSNetwork.registerServerHandlers();
         ABSServerLifecycle.register();
+        ABSCommands.register();
     }
 }

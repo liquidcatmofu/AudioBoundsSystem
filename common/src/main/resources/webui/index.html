@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ABS ダッシュボード</title>
+  <link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <span class="logo">ABS</span>
+      <span id="player-name" class="player-name">読み込み中...</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- パンくず -->
+    <nav id="breadcrumb" class="breadcrumb"></nav>
+
+    <!-- 現在フォルダのヘッダー -->
+    <div class="section-header">
+      <h2 id="current-title">ライブラリ</h2>
+      <div class="header-actions">
+        <button id="btn-settings" class="btn btn-ghost" hidden>⚙ 設定</button>
+        <button id="btn-new-folder" class="btn btn-primary" hidden>+ 新規フォルダ</button>
+      </div>
+    </div>
+
+    <!-- 子フォルダ一覧 -->
+    <div id="folder-list" class="folder-grid"></div>
+    <p id="folders-empty" class="empty-msg" hidden>フォルダがありません。</p>
+
+    <!-- 設定パネル -->
+    <section id="settings-panel" hidden>
+      <div class="card">
+        <h3>表示名</h3>
+        <div class="row">
+          <input id="input-display-name" type="text" class="input" placeholder="表示名">
+          <button id="btn-save-name" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>許可プレイヤー</h3>
+        <p class="hint">この設定はサブフォルダにも継承されます。</p>
+        <div id="allowed-list" class="player-list"></div>
+        <div class="row mt-8">
+          <input id="input-new-player" type="text" class="input" placeholder="プレイヤー UUID">
+          <button id="btn-add-player" class="btn btn-primary">追加</button>
+        </div>
+      </div>
+
+      <div class="card danger-zone" id="delete-card">
+        <h3>危険な操作</h3>
+        <button id="btn-delete-folder" class="btn btn-danger">このフォルダを削除</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- 新規フォルダ ダイアログ -->
+  <div id="dialog-overlay" class="overlay" hidden>
+    <div class="dialog">
+      <h3>新規フォルダの作成</h3>
+      <label>表示名
+        <input id="new-folder-name" type="text" class="input" placeholder="フォルダ名">
+      </label>
+      <p id="dialog-error" class="error-msg" hidden></p>
+      <div class="dialog-actions">
+        <button id="btn-dialog-cancel" class="btn btn-ghost">キャンセル</button>
+        <button id="btn-dialog-create" class="btn btn-primary">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>
