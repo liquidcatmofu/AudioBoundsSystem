@@ -1,0 +1,39 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "MIT"
+
+[[mods]]
+modId = "abs_tts"
+version = "${version}"
+displayName = "ABS TTS Addon"
+description = '''
+VOICEVOX TTS integration for AudioBoundsSystem
+'''
+
+[[dependencies.abs_tts]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.abs_tts]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.20.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.abs_tts]]
+modId = "architectury"
+mandatory = true
+versionRange = "[9.2.14,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.abs_tts]]
+modId = "abs"
+mandatory = true
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
