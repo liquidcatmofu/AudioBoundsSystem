@@ -4,13 +4,14 @@ import dev.architectury.event.events.common.LifecycleEvent;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.library.ABSLibrary;
 import io.github.liquidcatmofu.abs.server.web.WebSessionStore;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 
 public class ABSServerLifecycle {
     public static void register() {
         LifecycleEvent.SERVER_STARTING.register(server -> {
-            ABSLibrary.init(server.getServerDirectory().toPath());
+            ABSLibrary.init(server.getWorldPath(LevelResource.ROOT));
             try {
                 ABSHttpServer.start(server);
             } catch (IOException e) {

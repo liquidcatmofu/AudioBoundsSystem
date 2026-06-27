@@ -7,6 +7,7 @@ import io.github.liquidcatmofu.abs.server.web.LibraryApiHandler;
 import io.github.liquidcatmofu.abs.server.web.MeApiHandler;
 import io.github.liquidcatmofu.abs.server.web.WebUIHandler;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -24,7 +25,7 @@ public class ABSHttpServer {
     public static void start(MinecraftServer mcServer) throws IOException {
         if (server != null) return;
 
-        cacheDir = mcServer.getServerDirectory().toPath().resolve("abs_cache");
+        cacheDir = mcServer.getWorldPath(LevelResource.ROOT).resolve("abs_cache");
         Files.createDirectories(cacheDir);
 
         server = HttpServer.create(new InetSocketAddress(DEFAULT_PORT), 0);
