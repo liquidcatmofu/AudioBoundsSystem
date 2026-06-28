@@ -23,6 +23,7 @@ public class AddonTTSBridge implements TTSBridge {
     public List<TTSEngine> listEngines() {
         List<TTSEngine> engines = new ArrayList<>();
         for (TTSProvider p : TTSProviderRegistry.getAll()) {
+            if (!p.isAvailable()) continue;   // 起動していないエンジンはスキップ
             TTSEngine engine = new TTSEngine();
             engine.id = p.getId();
             engine.name = p.getDisplayName();
