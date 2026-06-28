@@ -82,6 +82,7 @@ function render() {
   renderSettings(current);
   renderAudioSection(current);
   renderTtsSection(current);
+  renderSequenceSection(current);
 }
 
 function renderBreadcrumb() {
@@ -492,6 +493,7 @@ function ttsError(msg) {
 function navigate(id) {
   currentId = id;
   settingsOpen = false;
+  stopSeqPreview();
   render();
 }
 
@@ -598,5 +600,288 @@ document.getElementById('tts-overlay').addEventListener('click', e => {
 document.getElementById('dialog-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDialog();
 });
+document.getElementById('btn-new-seq').addEventListener('click', () => openSeqDialog(null));
+document.getElementById('btn-add-seq-step').addEventListener('click', addSeqStep);
+document.getElementById('btn-seq-cancel').addEventListener('click', closeSeqDialog);
+document.getElementById('btn-seq-save').addEventListener('click', saveSeq);
+document.getElementById('seq-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSeqDialog();
+});
 
 init();
+
+// ── Sequence ──────────────────────────────────────────
+let editingSeqEntry   = null;
+let seqDialogSteps    = [];    // [{audioRef, delayTicks, label}]
+let seqAvailableItems = [];    // [{cacheFile, displayName, type}]
+
+// playback state
+let seqPlayingId    = null;
+let seqPlaybackAudio = null;
+let seqStepResolve  = null;
+let seqDelayTimer   = null;
+let seqStopped      = false;
+
+async function previewSeq(folderId, entry) {
+  if (seqPlayingId === entry.id) { stopSeqPreview(); return; }
+  stopSeqPreview();
+
+  const [audioRes, ttsRes] = await Promise.all([
+    api('GET', '/library/' + folderId + '/audio'),
+    api('GET', '/library/' + folderId + '/tts')
+  ]);
+  const cacheMap = new Map();
+  if (audioRes?.ok) {
+    (await audioRes.json()).forEach(a =>
+      cacheMap.set(a.cacheFile, '/api/library/' + folderId + '/audio/' + a.id + '/preview'));
+  }
+  if (ttsRes?.ok) {
+    (await ttsRes.json()).forEach(t =>
+      cacheMap.set(t.cacheFile, '/api/library/' + folderId + '/tts/' + t.id + '/preview'));
+  }
+
+  const steps = (entry.steps || []).filter(s => s.audioRef && cacheMap.has(s.audioRef));
+  if (steps.length === 0) return;
+
+  seqStopped = false;
+  seqPlayingId = entry.id;
+  updateSeqPlayBtn(entry.id);
+
+  for (const step of steps) {
+    if (seqStopped) break;
+    await new Promise(resolve => {
+      seqStepResolve = resolve;
+      seqPlaybackAudio = new Audio(cacheMap.get(step.audioRef));
+      seqPlaybackAudio.addEventListener('ended', () => {
+        seqPlaybackAudio = null;
+        if (!seqStopped && step.delayTicks > 0) {
+          seqDelayTimer = setTimeout(() => { seqDelayTimer = null; resolve(); }, step.delayTicks * 50);
+        } else {
+          resolve();
+        }
+      });
+      seqPlaybackAudio.addEventListener('error', resolve);
+      seqPlaybackAudio.play();
+    });
+    seqStepResolve = null;
+  }
+
+  if (seqPlayingId === entry.id) {
+    seqPlayingId = null;
+    updateSeqPlayBtn(null);
+  }
+}
+
+function stopSeqPreview() {
+  seqStopped = true;
+  if (seqDelayTimer) { clearTimeout(seqDelayTimer); seqDelayTimer = null; }
+  if (seqPlaybackAudio) { seqPlaybackAudio.pause(); seqPlaybackAudio = null; }
+  if (seqStepResolve) { seqStepResolve(); seqStepResolve = null; }
+  seqPlayingId = null;
+  updateSeqPlayBtn(null);
+}
+
+function updateSeqPlayBtn(playingId) {
+  document.querySelectorAll('#seq-list .seq-play').forEach(btn => {
+    btn.textContent = btn.dataset.seqId === playingId ? '⏹' : '▶';
+  });
+}
+
+function renderSequenceSection(current) {
+  const section = document.getElementById('seq-section');
+  if (!current) { section.hidden = true; return; }
+  section.hidden = false;
+  loadSequences(current.id);
+}
+
+async function loadSequences(folderId) {
+  const res = await api('GET', '/library/' + folderId + '/sequences');
+  if (!res || !res.ok) return;
+  if (currentId !== folderId) return;
+  renderSequenceList(await res.json(), folderId);
+}
+
+function renderSequenceList(entries, folderId) {
+  const list  = document.getElementById('seq-list');
+  const empty = document.getElementById('seq-empty');
+  list.innerHTML = '';
+  if (entries.length === 0) { empty.hidden = false; return; }
+  empty.hidden = true;
+
+  const isOwner = canManage(folders.get(folderId));
+  entries.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'audio-row';
+    row.innerHTML = `
+      <button class="btn-icon seq-play" data-seq-id="${esc(e.id)}" title="試聴">▶</button>
+      <div class="audio-info">
+        <div class="audio-name">${esc(e.displayName)}</div>
+        <div class="audio-meta">${(e.steps || []).length} ステップ</div>
+      </div>
+      ${isOwner ? '<button class="btn-icon edit" title="編集">✎</button>' : ''}
+      ${isOwner ? '<button class="btn-icon del" title="削除">✕</button>' : ''}`;
+    const playBtn = row.querySelector('.seq-play');
+    if (seqPlayingId === e.id) playBtn.textContent = '⏹';
+    playBtn.addEventListener('click', () => previewSeq(folderId, e));
+    if (isOwner) row.querySelector('.edit').addEventListener('click', () => openSeqDialog(e));
+    if (isOwner) row.querySelector('.del').addEventListener('click', () => deleteSeq(folderId, e));
+    list.appendChild(row);
+  });
+}
+
+async function openSeqDialog(entry) {
+  editingSeqEntry = entry || null;
+  seqDialogSteps = entry ? (entry.steps || []).map(s => ({ ...s })) : [];
+
+  document.getElementById('seq-dialog-title').textContent = entry ? 'シーケンスを編集' : '新規シーケンス';
+  document.getElementById('seq-name').value = entry ? (entry.displayName || '') : '';
+  document.getElementById('seq-error').hidden = true;
+
+  // フォルダ内の音声・TTS を取得してドロップダウン用リストを構築
+  const [audioRes, ttsRes] = await Promise.all([
+    api('GET', '/library/' + currentId + '/audio'),
+    api('GET', '/library/' + currentId + '/tts')
+  ]);
+  seqAvailableItems = [];
+  if (audioRes && audioRes.ok) {
+    (await audioRes.json()).forEach(a =>
+      seqAvailableItems.push({ cacheFile: a.cacheFile, displayName: a.displayName, type: 'audio' }));
+  }
+  if (ttsRes && ttsRes.ok) {
+    (await ttsRes.json()).forEach(t =>
+      seqAvailableItems.push({ cacheFile: t.cacheFile, displayName: t.displayName, type: 'tts' }));
+  }
+
+  renderSeqSteps();
+  document.getElementById('seq-overlay').hidden = false;
+}
+
+function renderSeqSteps() {
+  const container = document.getElementById('seq-steps');
+  container.innerHTML = '';
+  if (seqDialogSteps.length === 0) {
+    container.innerHTML = '<p class="hint" style="margin:8px 0">ステップがありません。「＋ ステップを追加」で追加してください。</p>';
+    return;
+  }
+
+  const audioOpts = seqAvailableItems.filter(it => it.type === 'audio');
+  const ttsOpts   = seqAvailableItems.filter(it => it.type === 'tts');
+
+  seqDialogSteps.forEach((step, i) => {
+    let opts = `<option value="">── 選択してください ──</option>`;
+    if (audioOpts.length > 0) {
+      opts += `<optgroup label="音声ファイル">`;
+      audioOpts.forEach(it => {
+        opts += `<option value="${esc(it.cacheFile)}"${it.cacheFile === step.audioRef ? ' selected' : ''}>${esc(it.displayName)}</option>`;
+      });
+      opts += `</optgroup>`;
+    }
+    if (ttsOpts.length > 0) {
+      opts += `<optgroup label="TTS セリフ">`;
+      ttsOpts.forEach(it => {
+        opts += `<option value="${esc(it.cacheFile)}"${it.cacheFile === step.audioRef ? ' selected' : ''}>${esc(it.displayName)}</option>`;
+      });
+      opts += `</optgroup>`;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'seq-step-row';
+    row.innerHTML = `
+      <div class="seq-step-header">
+        <span class="seq-step-num">${i + 1}</span>
+        <select class="input seq-audio-sel">${opts}</select>
+        <button class="btn-icon" title="上へ" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button class="btn-icon" title="下へ" ${i === seqDialogSteps.length - 1 ? 'disabled' : ''}>▼</button>
+        <button class="btn-icon del" title="削除">✕</button>
+      </div>
+      <div class="seq-step-meta">
+        <label class="seq-delay-label">遅延
+          <input type="number" class="input seq-delay" min="0" value="${step.delayTicks || 0}">
+          <span>ticks</span>
+        </label>
+        <input type="text" class="input seq-label-inp" placeholder="ラベル（省略可）" value="${esc(step.label || '')}">
+      </div>`;
+
+    const btns = row.querySelectorAll('.seq-step-header .btn-icon');
+    btns[0].addEventListener('click', () => { syncSeqStepsFromDom(); moveSeqStep(i, -1); });
+    btns[1].addEventListener('click', () => { syncSeqStepsFromDom(); moveSeqStep(i, +1); });
+    btns[2].addEventListener('click', () => { syncSeqStepsFromDom(); removeSeqStep(i); });
+    container.appendChild(row);
+  });
+}
+
+function syncSeqStepsFromDom() {
+  seqDialogSteps = Array.from(document.querySelectorAll('#seq-steps .seq-step-row')).map(row => ({
+    audioRef:   row.querySelector('.seq-audio-sel').value,
+    delayTicks: parseInt(row.querySelector('.seq-delay').value) || 0,
+    label:      row.querySelector('.seq-label-inp').value.trim()
+  }));
+}
+
+function addSeqStep() {
+  syncSeqStepsFromDom();
+  seqDialogSteps.push({ audioRef: '', delayTicks: 0, label: '' });
+  renderSeqSteps();
+}
+
+function moveSeqStep(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= seqDialogSteps.length) return;
+  [seqDialogSteps[i], seqDialogSteps[j]] = [seqDialogSteps[j], seqDialogSteps[i]];
+  renderSeqSteps();
+}
+
+function removeSeqStep(i) {
+  seqDialogSteps.splice(i, 1);
+  renderSeqSteps();
+}
+
+function closeSeqDialog() {
+  document.getElementById('seq-overlay').hidden = true;
+  editingSeqEntry = null;
+  seqDialogSteps = [];
+}
+
+async function saveSeq() {
+  const name = document.getElementById('seq-name').value.trim();
+  if (!name) { seqError('表示名を入力してください。'); return; }
+
+  const steps = Array.from(document.querySelectorAll('#seq-steps .seq-step-row')).map(row => ({
+    audioRef:   row.querySelector('.seq-audio-sel').value,
+    delayTicks: parseInt(row.querySelector('.seq-delay').value) || 0,
+    label:      row.querySelector('.seq-label-inp').value.trim()
+  }));
+
+  const payload = { displayName: name, steps };
+  const btn = document.getElementById('btn-seq-save');
+  btn.disabled = true;
+  try {
+    let res;
+    if (editingSeqEntry) {
+      res = await api('PATCH', '/library/' + currentId + '/sequences/' + editingSeqEntry.id, payload);
+    } else {
+      res = await api('POST', '/library/' + currentId + '/sequences', payload);
+    }
+    if (!res) return;
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      seqError(e.error || '保存に失敗しました。');
+      return;
+    }
+    closeSeqDialog();
+    loadSequences(currentId);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function seqError(msg) {
+  const el = document.getElementById('seq-error');
+  el.textContent = msg; el.hidden = false;
+}
+
+async function deleteSeq(folderId, entry) {
+  if (!confirm(`「${entry.displayName}」を削除しますか？`)) return;
+  const res = await api('DELETE', '/library/' + folderId + '/sequences/' + entry.id);
+  if (res && res.ok) loadSequences(folderId);
+}

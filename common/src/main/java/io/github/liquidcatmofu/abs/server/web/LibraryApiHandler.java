@@ -27,6 +27,11 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import io.github.liquidcatmofu.abs.library.LibrarySequence;
+import io.github.liquidcatmofu.abs.library.SequenceEntry;
+import io.github.liquidcatmofu.abs.library.SequenceStep;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -79,6 +84,8 @@ public class LibraryApiHandler implements HttpHandler {
                 handleAudio(exchange, method, id, extra, playerUuid, isOp);
             } else if (extra.equals("tts") || extra.startsWith("tts/")) {
                 handleTts(exchange, method, id, extra, playerUuid, isOp);
+            } else if (extra.equals("sequences") || extra.startsWith("sequences/")) {
+                handleSequence(exchange, method, id, extra, playerUuid, isOp);
             } else if (extra.isEmpty()) {
                 handleFolder(exchange, method, id, playerUuid, isOp);
             } else {
@@ -456,5 +463,70 @@ public class LibraryApiHandler implements HttpHandler {
     private String playerName(UUID playerUuid) {
         ServerPlayer player = server.getPlayerList().getPlayer(playerUuid);
         return player != null ? player.getGameProfile().getName() : playerUuid.toString();
+    }
+
+    // /api/library/{folderId}/sequences[/{seqId}]
+    private void handleSequence(HttpExchange exchange, String method, String folderId, String extra,
+                                UUID playerUuid, boolean isOp) throws IOException {
+        LibraryFolder folder = ABSLibrary.loadFolder(folderId).orElse(null);
+        if (folder == null) { WebAuthHelper.sendError(exchange, 404, "Folder not found"); return; }
+        if (!ABSLibrary.access(folder, playerUuid, isOp).canView()) {
+            WebAuthHelper.sendError(exchange, 403, "Forbidden"); return;
+        }
+
+        String[] seg = extra.split("/");
+        if (seg.length == 1) {
+            if ("GET".equals(method)) {
+                WebAuthHelper.sendJson(exchange, 200, GSON.toJson(LibrarySequence.list(folderId)));
+            } else if ("POST".equals(method)) {
+                JsonObject body = readJson(exchange);
+                if (body == null) { WebAuthHelper.sendError(exchange, 400, "Invalid JSON"); return; }
+                String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
+                SequenceEntry entry = LibrarySequence.create(folderId, displayName, parseSteps(body), playerUuid);
+                WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
+            } else {
+                WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
+            }
+            return;
+        }
+
+        String seqId = seg[1];
+        if (!ABSLibrary.isSafeId(seqId)) { WebAuthHelper.sendError(exchange, 400, "Invalid sequence id"); return; }
+
+        if (seg.length == 2) {
+            if ("GET".equals(method)) {
+                SequenceEntry entry = LibrarySequence.load(folderId, seqId).orElse(null);
+                if (entry == null) WebAuthHelper.sendError(exchange, 404, "Sequence not found");
+                else WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+            } else if ("PATCH".equals(method)) {
+                if (!ABSLibrary.access(folder, playerUuid, isOp).canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can update sequences"); return;
+                }
+                JsonObject body = readJson(exchange);
+                if (body == null) { WebAuthHelper.sendError(exchange, 400, "Invalid JSON"); return; }
+                String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
+                List<SequenceStep> steps = body.has("steps") ? parseSteps(body) : null;
+                SequenceEntry entry = LibrarySequence.update(folderId, seqId, displayName, steps);
+                WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+            } else if ("DELETE".equals(method)) {
+                if (!ABSLibrary.access(folder, playerUuid, isOp).canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can delete sequences"); return;
+                }
+                if (LibrarySequence.delete(folderId, seqId)) WebAuthHelper.sendJson(exchange, 200, "{\"deleted\":true}");
+                else WebAuthHelper.sendError(exchange, 404, "Sequence not found");
+            } else {
+                WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
+            }
+        } else {
+            WebAuthHelper.sendError(exchange, 404, "Not Found");
+        }
+    }
+
+    private List<SequenceStep> parseSteps(JsonObject body) {
+        List<SequenceStep> steps = new ArrayList<>();
+        if (body.has("steps") && body.get("steps").isJsonArray()) {
+            body.getAsJsonArray("steps").forEach(el -> steps.add(GSON.fromJson(el, SequenceStep.class)));
+        }
+        return steps;
     }
 }

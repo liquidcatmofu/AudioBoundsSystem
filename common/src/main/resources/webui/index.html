@@ -56,6 +56,16 @@
       <p id="tts-empty" class="empty-msg" hidden>セリフがありません。</p>
     </section>
 
+    <!-- 再生シーケンス（フォルダ内のみ表示） -->
+    <section id="seq-section" hidden>
+      <div class="section-header">
+        <h2>再生シーケンス</h2>
+        <button id="btn-new-seq" class="btn btn-primary">+ 新規シーケンス</button>
+      </div>
+      <div id="seq-list" class="audio-list"></div>
+      <p id="seq-empty" class="empty-msg" hidden>シーケンスがありません。</p>
+    </section>
+
     <!-- 設定パネル -->
     <section id="settings-panel" hidden>
       <div class="card">
@@ -119,6 +129,26 @@
       <div class="dialog-actions">
         <button id="btn-tts-cancel" class="btn btn-ghost">キャンセル</button>
         <button id="btn-tts-synth" class="btn btn-primary">合成して保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- シーケンス編集ダイアログ -->
+  <div id="seq-overlay" class="overlay" hidden>
+    <div class="dialog dialog-wide">
+      <h3 id="seq-dialog-title">新規シーケンス</h3>
+      <label>表示名
+        <input id="seq-name" type="text" class="input" placeholder="シーケンス名">
+      </label>
+      <div class="seq-steps-header">
+        <span class="seq-steps-label">ステップ</span>
+        <button id="btn-add-seq-step" class="btn btn-ghost btn-sm">＋ ステップを追加</button>
+      </div>
+      <div id="seq-steps"></div>
+      <p id="seq-error" class="error-msg" hidden></p>
+      <div class="dialog-actions">
+        <button id="btn-seq-cancel" class="btn btn-ghost">キャンセル</button>
+        <button id="btn-seq-save" class="btn btn-primary">保存</button>
       </div>
     </div>
   </div>
