@@ -36,8 +36,17 @@ dependencies {
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }
     shadowBundle project(path: ':common', configuration: 'transformProductionFabric')
 
-    // 開発実行時に TTS Addon を一緒にロード（本番は別 JAR）
-    modLocalRuntime project(':tts-addon-fabric')
+    // 開発実行時に TTS Addon を一緒にロード（本番は別 JAR）。
+    // Loom は設定段階でこの jar のメタデータを読むため、jar が無い状態（clean 直後など）では
+    // 依存を張らずスキップする。アドオンを dev で使うには先に `:tts-addon-fabric:build` を実行する。
+    def ttsAddonJar = rootProject.project(':tts-addon-fabric')
+            .file("build/libs/${rootProject.archives_name}-tts-addon-fabric-${rootProject.mod_version}.jar")
+    if (ttsAddonJar.exists()) {
+        modLocalRuntime project(':tts-addon-fabric')
+    } else {
+        logger.lifecycle("ABS: tts-addon jar が見つからないため dev ロードをスキップします。" +
+                "TTS アドオンを dev で読むには先に `./gradlew :tts-addon-fabric:build` を実行してください。")
+    }
 }
 
 processResources {
