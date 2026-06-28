@@ -91,6 +91,38 @@ public final class LibraryTts {
         return entry;
     }
 
+    /** 既存エントリを再合成して上書き保存する（ID・cacheFile は維持）。 */
+    public static TtsEntry update(String folderId, String id, String displayName,
+                                  TTSSynthesisRequest req, String speakerName, byte[] ogg) throws IOException {
+        TtsEntry entry = load(folderId, id)
+                .orElseThrow(() -> new IOException("TTS entry not found: " + id));
+
+        Path cachePath = ABSHttpServer.getCacheDir().resolve(entry.cacheFile);
+        Files.write(cachePath, ogg);
+
+        long durationTicks;
+        try {
+            durationTicks = OggAudioDuration.readDurationTicks(cachePath);
+        } catch (IOException e) {
+            durationTicks = 0;
+        }
+
+        entry.engineId = req.engineId;
+        entry.speakerId = req.speakerId;
+        entry.speakerName = speakerName;
+        entry.text = req.text;
+        entry.params = req.params;
+        entry.durationTicks = durationTicks;
+        if (displayName != null && !displayName.isBlank()) {
+            entry.displayName = displayName;
+        } else {
+            entry.displayName = trimForName(req.text);
+        }
+
+        Files.writeString(ttsDir(folderId).resolve(id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
+        return entry;
+    }
+
     public static boolean delete(String folderId, String id) throws IOException {
         TtsEntry entry = load(folderId, id).orElse(null);
         if (entry == null) return false;

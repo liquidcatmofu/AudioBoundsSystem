@@ -28,8 +28,11 @@ import java.util.Map;
  */
 public class VoiceVoxTTSProvider implements TTSProvider {
     private static final String ID = "voicevox";
-    /** VOICEVOX audio_query の調整可能フィールド */
-    private static final String[] PARAM_KEYS = { "speedScale", "pitchScale", "intonationScale", "volumeScale" };
+    /** VOICEVOX audio_query の調整可能フィールド（pauseLength は -1 で null/自動扱い） */
+    private static final String[] PARAM_KEYS = {
+        "speedScale", "pitchScale", "intonationScale", "volumeScale",
+        "prePhonemeLength", "postPhonemeLength", "pauseLengthScale", "pauseLength"
+    };
 
     @Override
     public String getId() {
@@ -87,10 +90,14 @@ public class VoiceVoxTTSProvider implements TTSProvider {
     @Override
     public List<TTSParam> paramSchema() {
         return List.of(
-            new TTSParam("speedScale",      "速度", 0.5,   2.0, 0.05, 1.0),
-            new TTSParam("pitchScale",      "ピッチ", -0.15, 0.15, 0.01, 0.0),
-            new TTSParam("intonationScale", "抑揚", 0.0,   2.0, 0.05, 1.0),
-            new TTSParam("volumeScale",     "音量", 0.0,   2.0, 0.05, 1.0)
+            new TTSParam("speedScale",        "速度",           0.5,  2.0,  0.05, 1.0),
+            new TTSParam("pitchScale",        "ピッチ",         -0.15, 0.15, 0.01, 0.0),
+            new TTSParam("intonationScale",   "抑揚",           0.0,  2.0,  0.05, 1.0),
+            new TTSParam("volumeScale",       "音量",           0.0,  2.0,  0.05, 1.0),
+            new TTSParam("prePhonemeLength",  "開始無音(秒)",   0.0,  1.5,  0.01, 0.1),
+            new TTSParam("postPhonemeLength", "終了無音(秒)",   0.0,  1.5,  0.01, 0.1),
+            new TTSParam("pauseLengthScale",  "無音スケール",   0.0,  2.0,  0.05, 1.0),
+            new TTSParam("pauseLength",       "句読点無音(秒)", -1.0, 2.0,  0.05, -1.0)
         );
     }
 
@@ -112,12 +119,17 @@ public class VoiceVoxTTSProvider implements TTSProvider {
         String audioQueryJson = readString(queryCon.getInputStream());
         queryCon.disconnect();
 
-        // 2. パラメータを適用
+        // 2. パラメータを適用（pauseLength は -1 = null/自動）
         JsonObject query = JsonParser.parseString(audioQueryJson).getAsJsonObject();
         if (params != null) {
             for (String key : PARAM_KEYS) {
                 Double v = params.get(key);
-                if (v != null) query.addProperty(key, v);
+                if (v == null) continue;
+                if ("pauseLength".equals(key) && v < 0) {
+                    query.add(key, com.google.gson.JsonNull.INSTANCE);
+                } else {
+                    query.addProperty(key, v);
+                }
             }
         }
         byte[] queryBytes = query.toString().getBytes(StandardCharsets.UTF_8);

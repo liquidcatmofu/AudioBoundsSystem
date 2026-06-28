@@ -259,7 +259,8 @@ function copyText(text) {
 }
 
 // ── TTS ────────────────────────────────────────────────
-let ttsMeta = null;   // { installed, available, engines:[...] }
+let ttsMeta = null;            // { installed, available, engines:[...] }
+let editingTtsEntry = null;   // 編集中の TtsEntry、null なら新規
 
 function renderTtsSection(current) {
   const section = document.getElementById('tts-section');
@@ -304,6 +305,7 @@ function renderTtsList(entries, folderId) {
   if (entries.length === 0) { empty.hidden = false; return; }
   empty.hidden = true;
 
+  const isOwner = canManage(folders.get(folderId));
   entries.forEach(e => {
     const row = document.createElement('div');
     row.className = 'audio-row';
@@ -314,6 +316,7 @@ function renderTtsList(entries, folderId) {
         <div class="audio-meta">${esc(e.speakerName || e.speakerId)} ・ ${fmtDuration(e.durationTicks)} ・ <span class="mono">${esc(e.cacheFile)}</span></div>
       </div>
       <button class="btn-icon copy" title="ファイル名をコピー">⧉</button>
+      ${isOwner ? '<button class="btn-icon edit" title="編集・再合成">✎</button>' : ''}
       <button class="btn-icon del" title="削除">✕</button>
       <audio preload="none" src="/api/library/${folderId}/tts/${e.id}/preview"></audio>`;
     const audio = row.querySelector('audio');
@@ -326,6 +329,7 @@ function renderTtsList(entries, folderId) {
     });
     audio.addEventListener('ended', () => { playBtn.textContent = '▶'; });
     row.querySelector('.copy').addEventListener('click', () => copyText(e.cacheFile));
+    if (isOwner) row.querySelector('.edit').addEventListener('click', () => openEditTtsDialog(e));
     row.querySelector('.del').addEventListener('click', () => deleteTts(folderId, e));
     list.appendChild(row);
   });
@@ -340,6 +344,10 @@ async function deleteTts(folderId, entry) {
 // ── TTS dialog ─────────────────────────────────────────
 function openTtsDialog() {
   if (!currentId || !ttsMeta || !ttsMeta.available) return;
+  editingTtsEntry = null;
+  document.getElementById('tts-dialog-title').textContent = 'セリフを合成';
+  document.getElementById('btn-tts-synth').textContent = '合成して保存';
+
   const engineSel = document.getElementById('tts-engine');
   engineSel.innerHTML = '';
   ttsMeta.engines.forEach(en => {
@@ -353,8 +361,51 @@ function openTtsDialog() {
   populateEngine();
   document.getElementById('tts-overlay').hidden = false;
 }
+
+function openEditTtsDialog(entry) {
+  if (!currentId || !ttsMeta || !ttsMeta.available) return;
+  editingTtsEntry = entry;
+  document.getElementById('tts-dialog-title').textContent = '再合成・編集';
+  document.getElementById('btn-tts-synth').textContent = '再合成して保存';
+
+  const engineSel = document.getElementById('tts-engine');
+  engineSel.innerHTML = '';
+  ttsMeta.engines.forEach(en => {
+    const o = document.createElement('option');
+    o.value = en.id; o.textContent = en.name;
+    engineSel.appendChild(o);
+  });
+  engineSel.value = entry.engineId;
+  populateEngine();
+
+  // 話者をプリフィル
+  const spSel = document.getElementById('tts-speaker');
+  spSel.value = entry.speakerId;
+
+  // テキスト・表示名をプリフィル
+  document.getElementById('tts-text').value = entry.text || '';
+  document.getElementById('tts-name').value = entry.displayName || '';
+  document.getElementById('tts-error').hidden = true;
+
+  // パラメータをプリフィル（保存済み値があればそちらを優先）
+  prefillTtsParams(entry.params || {});
+  document.getElementById('tts-overlay').hidden = false;
+}
+
+function prefillTtsParams(savedParams) {
+  document.querySelectorAll('#tts-params input[type=range]').forEach(range => {
+    const key = range.dataset.key;
+    if (savedParams[key] !== undefined) {
+      range.value = savedParams[key];
+      const valEl = document.getElementById('pv-' + key);
+      if (valEl) valEl.textContent = formatParamVal(key, parseFloat(savedParams[key]));
+    }
+  });
+}
+
 function closeTtsDialog() {
   document.getElementById('tts-overlay').hidden = true;
+  editingTtsEntry = null;
 }
 function currentEngine() {
   const id = document.getElementById('tts-engine').value;
@@ -378,11 +429,11 @@ function populateEngine() {
     const wrap = document.createElement('div');
     wrap.className = 'param-row';
     wrap.innerHTML = `
-      <label>${esc(p.label)} <span class="param-val" id="pv-${p.key}">${p.def}</span></label>
+      <label>${esc(p.label)} <span class="param-val" id="pv-${p.key}">${formatParamVal(p.key, p.def)}</span></label>
       <input type="range" data-key="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.def}">`;
     const range = wrap.querySelector('input');
     range.addEventListener('input', () => {
-      document.getElementById('pv-' + p.key).textContent = range.value;
+      document.getElementById('pv-' + p.key).textContent = formatParamVal(p.key, parseFloat(range.value));
     });
     box.appendChild(wrap);
   });
@@ -400,18 +451,26 @@ async function synthesizeTts() {
     params[r.dataset.key] = parseFloat(r.value);
   });
 
+  const payload = {
+    engineId: engine.id,
+    speakerId: speakerSel.value,
+    speakerName: speakerSel.options[speakerSel.selectedIndex].text,
+    text,
+    displayName: document.getElementById('tts-name').value.trim(),
+    params
+  };
+
   const btn = document.getElementById('btn-tts-synth');
+  const origLabel = btn.textContent;
   btn.disabled = true; btn.textContent = '合成中...';
   errEl.hidden = true;
   try {
-    const res = await api('POST', '/library/' + currentId + '/tts', {
-      engineId: engine.id,
-      speakerId: speakerSel.value,
-      speakerName: speakerSel.options[speakerSel.selectedIndex].text,
-      text,
-      displayName: document.getElementById('tts-name').value.trim(),
-      params
-    });
+    let res;
+    if (editingTtsEntry) {
+      res = await api('PATCH', '/library/' + currentId + '/tts/' + editingTtsEntry.id, payload);
+    } else {
+      res = await api('POST', '/library/' + currentId + '/tts', payload);
+    }
     if (!res) return;
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -421,7 +480,7 @@ async function synthesizeTts() {
     closeTtsDialog();
     loadTts(currentId);
   } finally {
-    btn.disabled = false; btn.textContent = '合成して保存';
+    btn.disabled = false; btn.textContent = origLabel;
   }
 }
 function ttsError(msg) {
@@ -505,6 +564,10 @@ function showDialogError(msg) {
 }
 
 // ── utils ──────────────────────────────────────────────
+function formatParamVal(key, val) {
+  if (key === 'pauseLength' && val < 0) return '自動';
+  return String(val);
+}
 function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

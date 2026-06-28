@@ -321,7 +321,17 @@ public class LibraryApiHandler implements HttpHandler {
                 TtsEntry entry = LibraryTts.load(folderId, ttsId).orElse(null);
                 if (entry == null) WebAuthHelper.sendError(exchange, 404, "Not found");
                 else WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+            } else if ("PATCH".equals(method)) {
+                if (!ABSLibrary.access(folder, playerUuid, isOp).canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can edit TTS entries");
+                    return;
+                }
+                resynthesizeTts(exchange, folderId, ttsId, playerUuid);
             } else if ("DELETE".equals(method)) {
+                if (!ABSLibrary.access(folder, playerUuid, isOp).canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can delete TTS entries");
+                    return;
+                }
                 if (LibraryTts.delete(folderId, ttsId)) WebAuthHelper.sendJson(exchange, 200, "{\"deleted\":true}");
                 else WebAuthHelper.sendError(exchange, 404, "Not found");
             } else {
@@ -373,6 +383,45 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: TTS synthesis failed", e);
+            WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
+        }
+    }
+
+    private void resynthesizeTts(HttpExchange exchange, String folderId, String ttsId, UUID playerUuid) throws IOException {
+        TTSBridge bridge = TTSBridgeRegistry.get();
+        if (bridge == null) {
+            WebAuthHelper.sendError(exchange, 503, "TTS アドオンが導入されていません");
+            return;
+        }
+        JsonObject body = readJson(exchange);
+        if (body == null || !body.has("engineId") || !body.has("speakerId") || !body.has("text")) {
+            WebAuthHelper.sendError(exchange, 400, "Missing engineId/speakerId/text");
+            return;
+        }
+        String text = body.get("text").getAsString().trim();
+        if (text.isEmpty()) {
+            WebAuthHelper.sendError(exchange, 400, "text must not be empty");
+            return;
+        }
+
+        TTSSynthesisRequest req = new TTSSynthesisRequest();
+        req.engineId = body.get("engineId").getAsString();
+        req.speakerId = body.get("speakerId").getAsString();
+        req.text = text;
+        if (body.has("params") && body.get("params").isJsonObject()) {
+            for (var e : body.getAsJsonObject("params").entrySet()) {
+                try { req.params.put(e.getKey(), e.getValue().getAsDouble()); } catch (Exception ignored) {}
+            }
+        }
+        String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
+        String speakerName = body.has("speakerName") ? body.get("speakerName").getAsString() : null;
+
+        try {
+            byte[] ogg = bridge.synthesize(req);
+            TtsEntry entry = LibraryTts.update(folderId, ttsId, displayName, req, speakerName, ogg);
+            WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+        } catch (Exception e) {
+            AudioBoundsSystem.LOGGER.error("ABS: TTS re-synthesis failed", e);
             WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
         }
     }
