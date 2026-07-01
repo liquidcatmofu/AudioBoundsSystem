@@ -2,14 +2,18 @@ package io.github.liquidcatmofu.abs.block;
 
 import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
 import io.github.liquidcatmofu.abs.client.AudioBoundsSystemClient;
+import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
@@ -36,6 +40,17 @@ public class SpeakerBlock extends BaseEntityBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new SpeakerBlockEntity(pos, state);
+    }
+
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state,
+                            @Nullable LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (placer instanceof ServerPlayer player
+                && level.getBlockEntity(pos) instanceof SpeakerBlockEntity speaker) {
+            speaker.setOwnerUuid(player.getUUID());
+            SpeakerTomlConfig.save(level, speaker);
+        }
     }
 
     @Override

@@ -1,11 +1,14 @@
 package io.github.liquidcatmofu.abs.client;
 
 import io.github.liquidcatmofu.abs.client.audio.SpeakerAudioManager;
+import io.github.liquidcatmofu.abs.client.gui.LibraryBrowserScreen;
 import io.github.liquidcatmofu.abs.client.subtitle.SubtitleOverlayManager;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
+import java.util.List;
 import java.util.UUID;
 
 @Environment(EnvType.CLIENT)
@@ -20,5 +23,18 @@ public final class ClientPacketHandler {
     public static void onStopAudio(BlockPos pos) {
         SpeakerAudioManager.INSTANCE.stop(pos);
         SubtitleOverlayManager.INSTANCE.clear(pos);
+    }
+
+    public static void onLibraryFoldersResponse(List<LibraryFolderInfo> folders) {
+        if (Minecraft.getInstance().screen instanceof LibraryBrowserScreen browser) {
+            browser.onFoldersReceived(folders);
+        }
+    }
+
+    public static void onFolderContentsResponse(String folderId, List<LibraryEntryInfo> audio,
+                                                List<LibraryEntryInfo> tts, List<LibraryEntryInfo> seqs) {
+        if (Minecraft.getInstance().screen instanceof LibraryBrowserScreen browser) {
+            browser.onContentsReceived(folderId, audio, tts, seqs);
+        }
     }
 }

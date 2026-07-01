@@ -4,6 +4,8 @@ import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.blockentity.AudioControllerBlockEntity;
 import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
 import io.github.liquidcatmofu.abs.client.ClientPacketHandler;
+import io.github.liquidcatmofu.abs.client.LibraryEntryInfo;
+import io.github.liquidcatmofu.abs.client.LibraryFolderInfo;
 import io.github.liquidcatmofu.abs.config.AudioControllerTomlConfig;
 import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
@@ -11,12 +13,24 @@ import io.github.liquidcatmofu.abs.data.BoundsShape;
 import io.github.liquidcatmofu.abs.data.ControllerRetriggerMode;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
+import io.github.liquidcatmofu.abs.library.ABSLibrary;
+import io.github.liquidcatmofu.abs.library.AudioEntry;
+import io.github.liquidcatmofu.abs.library.FolderAccess;
+import io.github.liquidcatmofu.abs.library.LibraryAudio;
+import io.github.liquidcatmofu.abs.library.LibraryFolder;
+import io.github.liquidcatmofu.abs.library.LibraryRef;
+import io.github.liquidcatmofu.abs.library.LibrarySequence;
+import io.github.liquidcatmofu.abs.library.LibraryTts;
+import io.github.liquidcatmofu.abs.library.SequenceEntry;
+import io.github.liquidcatmofu.abs.library.TtsEntry;
+import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -37,8 +51,13 @@ public final class ABSNetwork {
     public static final ResourceLocation STOP_AUDIO_CONTROLLER_PLAYBACK =
             new ResourceLocation("abs", "stop_audio_controller_playback");
 
-    private ABSNetwork() {
-    }
+    // ライブラリブラウザ用パケット
+    public static final ResourceLocation REQUEST_LIBRARY_FOLDERS  = new ResourceLocation("abs", "req_lib_folders");
+    public static final ResourceLocation LIBRARY_FOLDERS_RESPONSE = new ResourceLocation("abs", "lib_folders_resp");
+    public static final ResourceLocation REQUEST_FOLDER_CONTENTS  = new ResourceLocation("abs", "req_folder_contents");
+    public static final ResourceLocation FOLDER_CONTENTS_RESPONSE = new ResourceLocation("abs", "folder_contents_resp");
+
+    private ABSNetwork() {}
 
     public static void registerServerHandlers() {
         NetworkManager.registerReceiver(NetworkManager.Side.C2S, SAVE_SPEAKER_CONFIG, (buf, ctx) -> {
@@ -54,20 +73,22 @@ public final class ABSNetwork {
             boolean subtitleEnabled = buf.readBoolean();
             String trackTitle = buf.readUtf(128);
             String subtitle = buf.readUtf(512);
+            String displayName = buf.readUtf(128);
 
             ctx.queue(() -> {
                 Player player = ctx.getPlayer();
-                if (player == null || player.level() == null) {
-                    return;
-                }
+                if (player == null || player.level() == null) return;
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
-                if (!(blockEntity instanceof SpeakerBlockEntity speaker)) {
-                    return;
-                }
+                if (!(blockEntity instanceof SpeakerBlockEntity speaker)) return;
+
+                // オーナーまたは OP のみ保存可能
+                if (!canModifySpeaker(player, speaker)) return;
 
                 AudioBounds bounds = new AudioBounds(shape, radius, width, depth, height);
-                speaker.applyLoadedConfig(bounds, curve, redstoneMode, audioFile, subtitleEnabled, trackTitle, subtitle);
+                speaker.applyLoadedConfig(bounds, curve, redstoneMode, audioFile, subtitleEnabled,
+                        trackTitle, subtitle, displayName);
+                speaker.setAudioDisplayName(LibraryRef.resolveDisplayName(audioFile));
                 SpeakerTomlConfig.save(player.level(), speaker);
                 speaker.setChanged();
                 speaker.syncConfigToClients();
@@ -100,14 +121,10 @@ public final class ABSNetwork {
 
             ctx.queue(() -> {
                 Player player = ctx.getPlayer();
-                if (player == null || player.level() == null) {
-                    return;
-                }
+                if (player == null || player.level() == null) return;
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
-                if (!(blockEntity instanceof AudioControllerBlockEntity controller)) {
-                    return;
-                }
+                if (!(blockEntity instanceof AudioControllerBlockEntity controller)) return;
 
                 controller.applyLoadedConfig(controllerId, targetOffsets, queues, redstoneMode, retriggerMode);
                 AudioControllerTomlConfig.save(player.level(), controller);
@@ -122,14 +139,10 @@ public final class ABSNetwork {
 
             ctx.queue(() -> {
                 Player player = ctx.getPlayer();
-                if (player == null || !(player.level() instanceof ServerLevel serverLevel)) {
-                    return;
-                }
+                if (player == null || !(player.level() instanceof ServerLevel serverLevel)) return;
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
-                if (!(blockEntity instanceof AudioControllerBlockEntity controller)) {
-                    return;
-                }
+                if (!(blockEntity instanceof AudioControllerBlockEntity controller)) return;
 
                 controller.triggerSignal(serverLevel, signal);
             });
@@ -140,16 +153,73 @@ public final class ABSNetwork {
 
             ctx.queue(() -> {
                 Player player = ctx.getPlayer();
-                if (player == null || !(player.level() instanceof ServerLevel serverLevel)) {
-                    return;
-                }
+                if (player == null || !(player.level() instanceof ServerLevel serverLevel)) return;
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
-                if (!(blockEntity instanceof AudioControllerBlockEntity controller)) {
-                    return;
-                }
+                if (!(blockEntity instanceof AudioControllerBlockEntity controller)) return;
 
                 controller.stopPlayback(serverLevel);
+            });
+        });
+
+        // ── ライブラリブラウザ ──────────────────────────────────
+
+        NetworkManager.registerReceiver(NetworkManager.Side.C2S, REQUEST_LIBRARY_FOLDERS, (buf, ctx) -> {
+            ctx.queue(() -> {
+                Player player = ctx.getPlayer();
+                if (!(player instanceof ServerPlayer sp)) return;
+                boolean isOp = sp.getServer().getPlayerList().isOp(sp.getGameProfile());
+                List<LibraryFolder> folders = ABSLibrary.listAccessible(player.getUUID(), isOp);
+
+                FriendlyByteBuf resp = new FriendlyByteBuf(Unpooled.buffer());
+                resp.writeVarInt(folders.size());
+                for (LibraryFolder f : folders) {
+                    resp.writeUtf(f.id, 128);
+                    resp.writeUtf(f.displayName != null ? f.displayName : "", 256);
+                    boolean hasParent = f.parentId != null;
+                    resp.writeBoolean(hasParent);
+                    if (hasParent) resp.writeUtf(f.parentId, 128);
+                }
+                NetworkManager.sendToPlayer(sp, LIBRARY_FOLDERS_RESPONSE, resp);
+            });
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.C2S, REQUEST_FOLDER_CONTENTS, (buf, ctx) -> {
+            String folderId = buf.readUtf(128);
+
+            ctx.queue(() -> {
+                Player player = ctx.getPlayer();
+                if (!(player instanceof ServerPlayer sp)) return;
+                boolean isOp = sp.getServer().getPlayerList().isOp(sp.getGameProfile());
+                LibraryFolder folder = ABSLibrary.loadFolder(folderId).orElse(null);
+                if (folder == null) return;
+                if (ABSLibrary.access(folder, player.getUUID(), isOp) == FolderAccess.NONE) return;
+
+                List<AudioEntry> audioEntries = LibraryAudio.list(folderId);
+                List<TtsEntry> ttsEntries = LibraryTts.list(folderId);
+                List<SequenceEntry> seqEntries = LibrarySequence.list(folderId);
+
+                FriendlyByteBuf resp = new FriendlyByteBuf(Unpooled.buffer());
+                resp.writeUtf(folderId, 128);
+                resp.writeVarInt(audioEntries.size());
+                for (AudioEntry e : audioEntries) {
+                    resp.writeUtf(e.id, 128);
+                    resp.writeUtf(e.displayName != null ? e.displayName : "", 256);
+                    resp.writeVarInt((int) e.durationTicks);
+                }
+                resp.writeVarInt(ttsEntries.size());
+                for (TtsEntry e : ttsEntries) {
+                    resp.writeUtf(e.id, 128);
+                    resp.writeUtf(e.displayName != null ? e.displayName : "", 256);
+                    resp.writeVarInt((int) e.durationTicks);
+                    resp.writeUtf(e.speakerName != null ? e.speakerName : "", 128);
+                }
+                resp.writeVarInt(seqEntries.size());
+                for (SequenceEntry e : seqEntries) {
+                    resp.writeUtf(e.id, 128);
+                    resp.writeUtf(e.displayName != null ? e.displayName : "", 256);
+                }
+                NetworkManager.sendToPlayer(sp, FOLDER_CONTENTS_RESPONSE, resp);
             });
         });
     }
@@ -169,5 +239,51 @@ public final class ABSNetwork {
             BlockPos pos = buf.readBlockPos();
             ctx.queue(() -> ClientPacketHandler.onStopAudio(pos));
         });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, LIBRARY_FOLDERS_RESPONSE, (buf, ctx) -> {
+            int count = buf.readVarInt();
+            List<LibraryFolderInfo> folders = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                String id   = buf.readUtf(128);
+                String name = buf.readUtf(256);
+                String parentId = buf.readBoolean() ? buf.readUtf(128) : null;
+                folders.add(new LibraryFolderInfo(id, name, parentId));
+            }
+            ctx.queue(() -> ClientPacketHandler.onLibraryFoldersResponse(folders));
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, FOLDER_CONTENTS_RESPONSE, (buf, ctx) -> {
+            String folderId = buf.readUtf(128);
+            int audioCount = buf.readVarInt();
+            List<LibraryEntryInfo> audioEntries = new ArrayList<>(audioCount);
+            for (int i = 0; i < audioCount; i++) {
+                audioEntries.add(new LibraryEntryInfo(
+                        buf.readUtf(128), buf.readUtf(256), buf.readVarInt(), "audio", ""));
+            }
+            int ttsCount = buf.readVarInt();
+            List<LibraryEntryInfo> ttsEntries = new ArrayList<>(ttsCount);
+            for (int i = 0; i < ttsCount; i++) {
+                ttsEntries.add(new LibraryEntryInfo(
+                        buf.readUtf(128), buf.readUtf(256), buf.readVarInt(), "tts", buf.readUtf(128)));
+            }
+            int seqCount = buf.readVarInt();
+            List<LibraryEntryInfo> seqEntries = new ArrayList<>(seqCount);
+            for (int i = 0; i < seqCount; i++) {
+                seqEntries.add(new LibraryEntryInfo(
+                        buf.readUtf(128), buf.readUtf(256), 0, "sequence", ""));
+            }
+            ctx.queue(() -> ClientPacketHandler.onFolderContentsResponse(folderId, audioEntries, ttsEntries, seqEntries));
+        });
+    }
+
+    /** プレイヤーがスピーカーの設定を変更できるか: オーナーまたは OP。オーナー未設定なら誰でも可。 */
+    private static boolean canModifySpeaker(Player player, SpeakerBlockEntity speaker) {
+        UUID owner = speaker.getOwnerUuid();
+        if (owner == null) return true;
+        if (owner.equals(player.getUUID())) return true;
+        if (player instanceof ServerPlayer sp) {
+            return sp.getServer().getPlayerList().isOp(sp.getGameProfile());
+        }
+        return false;
     }
 }

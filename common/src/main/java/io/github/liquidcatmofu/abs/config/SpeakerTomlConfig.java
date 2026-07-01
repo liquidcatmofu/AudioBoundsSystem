@@ -4,6 +4,7 @@ import com.electronwill.nightconfig.core.CommentedConfig;
 import com.electronwill.nightconfig.core.file.CommentedFileConfig;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
+import io.github.liquidcatmofu.abs.library.LibraryRef;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.BoundsShape;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
@@ -17,6 +18,7 @@ import net.minecraft.world.level.storage.LevelResource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
 
 public final class SpeakerTomlConfig {
     public static final int MAX_PACKET_BYTES = 64 * 1024;
@@ -34,7 +36,9 @@ public final class SpeakerTomlConfig {
         }
         try (CommentedFileConfig config = CommentedFileConfig.builder(path).sync().preserveInsertionOrder().build()) {
             config.load();
-            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getRedstoneMode(), speaker.getAudioFile(), speaker.isSubtitleEnabled(), speaker.getTrackTitle(), speaker.getSubtitle());
+            write(config, speaker.getBounds(), speaker.getFalloffCurve(), speaker.getRedstoneMode(),
+                    speaker.getAudioFile(), speaker.isSubtitleEnabled(), speaker.getTrackTitle(),
+                    speaker.getSubtitle(), speaker.getDisplayName(), speaker.getOwnerUuid());
             config.save();
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to save speaker TOML config {}", path, e);
@@ -65,8 +69,14 @@ public final class SpeakerTomlConfig {
                     readAudioFile(config),
                     readSubtitleEnabled(config),
                     readTrackTitle(config),
-                    readSubtitle(config)
+                    readSubtitle(config),
+                    readDisplayName(config)
             );
+            UUID ownerUuid = readOwnerUuid(config);
+            if (ownerUuid != null) {
+                speaker.setOwnerUuid(ownerUuid);
+            }
+            speaker.setAudioDisplayName(LibraryRef.resolveDisplayName(speaker.getAudioFile()));
             return true;
         } catch (RuntimeException e) {
             AudioBoundsSystem.LOGGER.warn("ABS: Failed to load speaker TOML config {}", path, e);
@@ -91,6 +101,16 @@ public final class SpeakerTomlConfig {
         return RedstoneMode.fromString(config.getOrElse("redstone.mode", RedstoneMode.LEVEL.name()));
     }
 
+    public static String readDisplayName(CommentedConfig config) {
+        return config.getOrElse("display.name", "");
+    }
+
+    public static UUID readOwnerUuid(CommentedConfig config) {
+        String uuidStr = config.getOrElse("owner.uuid", "");
+        if (uuidStr.isBlank()) return null;
+        try { return UUID.fromString(uuidStr); } catch (IllegalArgumentException e) { return null; }
+    }
+
     public static String readAudioFile(CommentedConfig config) {
         return config.getOrElse("audio.file", "");
     }
@@ -107,7 +127,7 @@ public final class SpeakerTomlConfig {
         return config.getOrElse("display.subtitle", "");
     }
 
-    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, RedstoneMode redstoneMode, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
+    public static void write(CommentedConfig config, AudioBounds bounds, FalloffCurve curve, RedstoneMode redstoneMode, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle, String displayName, UUID ownerUuid) {
         config.set("area.shape", bounds.getShape().name());
         config.setComment("area.shape", "Bounds shape: SPHERE, BOX, CYLINDER, or HEMISPHERE.");
         config.set("area.radius", bounds.getRadius());
@@ -133,6 +153,13 @@ public final class SpeakerTomlConfig {
         config.setComment("display.track_title", "Optional title shown above subtitles. Empty values fall back to audio.file.");
         config.set("display.subtitle", subtitle == null ? "" : subtitle);
         config.setComment("display.subtitle", "Optional subtitle text shown while the audio starts playing.");
+
+        config.set("display.name", displayName == null ? "" : displayName);
+        config.setComment("display.name", "Human-readable name for this speaker, shown in the ABS dashboard.");
+        if (ownerUuid != null) {
+            config.set("owner.uuid", ownerUuid.toString());
+            config.setComment("owner.uuid", "UUID of the player who placed this speaker (used for access control).");
+        }
     }
 
     private static Path pathFor(Level level, BlockPos pos) {

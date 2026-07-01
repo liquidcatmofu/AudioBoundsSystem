@@ -3,6 +3,7 @@ package io.github.liquidcatmofu.abs.server;
 import com.sun.net.httpserver.HttpServer;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.server.web.AuthApiHandler;
+import io.github.liquidcatmofu.abs.server.web.BlockConfigApiHandler;
 import io.github.liquidcatmofu.abs.server.web.LibraryApiHandler;
 import io.github.liquidcatmofu.abs.server.web.MeApiHandler;
 import io.github.liquidcatmofu.abs.server.web.TtsApiHandler;
@@ -35,6 +36,7 @@ public class ABSHttpServer {
         server.createContext("/api/me",      new MeApiHandler(mcServer));
         server.createContext("/api/tts",     new TtsApiHandler());
         server.createContext("/api/library", new LibraryApiHandler(mcServer));
+        server.createContext("/api/blocks",  new BlockConfigApiHandler(mcServer));
         server.createContext("/ui",          new WebUIHandler());
         server.setExecutor(Executors.newFixedThreadPool(8));
         server.start();

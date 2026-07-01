@@ -6,6 +6,9 @@ import io.github.liquidcatmofu.abs.config.AudioControllerTomlConfig;
 import io.github.liquidcatmofu.abs.data.ControllerRetriggerMode;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
+import io.github.liquidcatmofu.abs.library.LibraryRef;
+import io.github.liquidcatmofu.abs.library.LibrarySequence;
+import io.github.liquidcatmofu.abs.library.SequenceStep;
 import io.github.liquidcatmofu.abs.server.ABSHttpServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -27,15 +30,17 @@ import java.util.List;
 import java.util.Map;
 
 public class AudioControllerBlockEntity extends BlockEntity {
-    private static final String KEY_CONTROLLER_ID = "ControllerId";
-    private static final String KEY_TARGET_SPEAKERS = "TargetSpeakers";
-    private static final String KEY_REDSTONE_QUEUES = "RedstoneQueues";
-    private static final String KEY_REDSTONE_MODE = "RedstoneMode";
-    private static final String KEY_RETRIGGER_MODE = "RetriggerMode";
+    private static final String KEY_CONTROLLER_ID       = "ControllerId";
+    private static final String KEY_TARGET_SPEAKERS      = "TargetSpeakers";
+    private static final String KEY_REDSTONE_QUEUES      = "RedstoneQueues";
+    private static final String KEY_QUEUE_DISPLAY_NAMES  = "QueueDisplayNames";
+    private static final String KEY_REDSTONE_MODE        = "RedstoneMode";
+    private static final String KEY_RETRIGGER_MODE       = "RetriggerMode";
 
     private String controllerId = "";
     private List<BlockPos> targetSpeakerOffsets = List.of();
-    private Map<Integer, List<String>> redstoneQueues = Map.of();
+    private Map<Integer, List<String>> redstoneQueues     = Map.of();
+    private Map<Integer, List<String>> queueDisplayNames  = Map.of();
     private RedstoneMode redstoneMode = RedstoneMode.PULSE;
     private ControllerRetriggerMode retriggerMode = ControllerRetriggerMode.RESTART;
     private int lastRedstoneSignal;
@@ -64,6 +69,10 @@ public class AudioControllerBlockEntity extends BlockEntity {
         return redstoneQueues;
     }
 
+    public Map<Integer, List<String>> getQueueDisplayNames() {
+        return queueDisplayNames;
+    }
+
     public RedstoneMode getRedstoneMode() {
         return redstoneMode;
     }
@@ -79,11 +88,11 @@ public class AudioControllerBlockEntity extends BlockEntity {
             RedstoneMode redstoneMode,
             ControllerRetriggerMode retriggerMode
     ) {
-        this.controllerId = controllerId == null ? "" : controllerId;
+        this.controllerId         = controllerId == null ? "" : controllerId;
         this.targetSpeakerOffsets = List.copyOf(targetSpeakerOffsets);
-        this.redstoneQueues = Map.copyOf(redstoneQueues);
-        this.redstoneMode = redstoneMode == null ? RedstoneMode.PULSE : redstoneMode;
-        this.retriggerMode = retriggerMode == null ? ControllerRetriggerMode.RESTART : retriggerMode;
+        this.redstoneQueues       = Map.copyOf(redstoneQueues);
+        this.redstoneMode         = redstoneMode == null ? RedstoneMode.PULSE : redstoneMode;
+        this.retriggerMode        = retriggerMode == null ? ControllerRetriggerMode.RESTART : retriggerMode;
         setChanged();
     }
 
@@ -152,12 +161,35 @@ public class AudioControllerBlockEntity extends BlockEntity {
             return;
         }
 
-        activeQueue = List.copyOf(queue);
+        activeQueue = expandRefs(queue);
         activeQueueIndex = 0;
         activeQueueHadPlayableTrack = false;
         pendingRestartSignal = 0;
         nextTrackTick = level.getGameTime();
         runNextQueueEntry(level);
+    }
+
+    /** シーケンス ref をステップの audioRef に展開し、通常 ref はそのまま渡す。 */
+    private List<String> expandRefs(List<String> refs) {
+        List<String> out = new ArrayList<>();
+        for (String ref : refs) {
+            if (ref.startsWith(LibraryRef.PREFIX)) {
+                String body  = ref.substring(LibraryRef.PREFIX.length());
+                String[] parts = body.split("/", 3);
+                if (parts.length == 3 && "sequence".equals(parts[1])) {
+                    LibrarySequence.load(parts[0], parts[2]).ifPresent(seq -> {
+                        for (SequenceStep step : seq.steps) {
+                            if (step.audioRef != null && !step.audioRef.isBlank()) {
+                                out.add(step.audioRef);
+                            }
+                        }
+                    });
+                    continue;
+                }
+            }
+            out.add(ref);
+        }
+        return List.copyOf(out);
     }
 
     private void runNextQueueEntry(ServerLevel level) {
@@ -188,9 +220,9 @@ public class AudioControllerBlockEntity extends BlockEntity {
             return -1;
         }
 
-        Path path = ABSHttpServer.getCacheDir().resolve(audioFile);
-        if (!Files.isRegularFile(path)) {
-            AudioBoundsSystem.LOGGER.warn("ABS: Controller at {} could not find audio file {}", worldPosition, path);
+        Path path = LibraryRef.resolve(audioFile).orElse(null);
+        if (path == null) {
+            AudioBoundsSystem.LOGGER.warn("ABS: Controller at {} could not resolve audio ref: {}", worldPosition, audioFile);
             return -1;
         }
 
@@ -274,11 +306,12 @@ public class AudioControllerBlockEntity extends BlockEntity {
     @Override
     public void load(CompoundTag tag) {
         super.load(tag);
-        controllerId = tag.getString(KEY_CONTROLLER_ID);
+        controllerId        = tag.getString(KEY_CONTROLLER_ID);
         targetSpeakerOffsets = readTargetSpeakers(tag.getList(KEY_TARGET_SPEAKERS, Tag.TAG_COMPOUND));
-        redstoneQueues = readRedstoneQueues(tag.getCompound(KEY_REDSTONE_QUEUES));
-        redstoneMode = RedstoneMode.fromString(tag.getString(KEY_REDSTONE_MODE));
-        retriggerMode = ControllerRetriggerMode.fromString(tag.getString(KEY_RETRIGGER_MODE));
+        redstoneQueues      = readRedstoneQueues(tag.getCompound(KEY_REDSTONE_QUEUES));
+        queueDisplayNames   = readQueueDisplayNames(tag.getCompound(KEY_QUEUE_DISPLAY_NAMES));
+        redstoneMode        = RedstoneMode.fromString(tag.getString(KEY_REDSTONE_MODE));
+        retriggerMode       = ControllerRetriggerMode.fromString(tag.getString(KEY_RETRIGGER_MODE));
     }
 
     @Override
@@ -313,6 +346,14 @@ public class AudioControllerBlockEntity extends BlockEntity {
     public CompoundTag getUpdateTag() {
         CompoundTag tag = new CompoundTag();
         saveAdditional(tag);
+        // 表示名はセーブ不要。サーバー側で毎回動的解決してクライアントに送信する
+        CompoundTag names = new CompoundTag();
+        for (Map.Entry<Integer, List<String>> e : redstoneQueues.entrySet()) {
+            ListTag list = new ListTag();
+            for (String ref : e.getValue()) list.add(StringTag.valueOf(LibraryRef.resolveDisplayName(ref)));
+            names.put(Integer.toString(e.getKey()), list);
+        }
+        tag.put(KEY_QUEUE_DISPLAY_NAMES, names);
         return tag;
     }
 
@@ -352,6 +393,20 @@ public class AudioControllerBlockEntity extends BlockEntity {
             offsets.add(new BlockPos(entry.getInt("X"), entry.getInt("Y"), entry.getInt("Z")));
         }
         return List.copyOf(offsets);
+    }
+
+    private Map<Integer, List<String>> readQueueDisplayNames(CompoundTag tag) {
+        Map<Integer, List<String>> result = new HashMap<>();
+        for (String key : tag.getAllKeys()) {
+            try {
+                int signal = Integer.parseInt(key);
+                ListTag list = tag.getList(key, Tag.TAG_STRING);
+                List<String> names = new ArrayList<>();
+                for (int i = 0; i < list.size(); i++) names.add(list.getString(i));
+                result.put(signal, List.copyOf(names));
+            } catch (NumberFormatException ignored) {}
+        }
+        return Map.copyOf(result);
     }
 
     private Map<Integer, List<String>> readRedstoneQueues(CompoundTag tag) {

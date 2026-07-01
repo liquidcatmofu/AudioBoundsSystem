@@ -10,6 +10,7 @@
   <header>
     <div class="header-inner">
       <span class="logo">ABS</span>
+      <button id="btn-speakers" class="btn btn-ghost btn-sm" hidden>🔊 スピーカー管理</button>
       <span id="player-name" class="player-name">読み込み中...</span>
     </div>
   </header>
@@ -149,6 +150,48 @@
       <div class="dialog-actions">
         <button id="btn-seq-cancel" class="btn btn-ghost">キャンセル</button>
         <button id="btn-seq-save" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- スピーカー割り当てダイアログ（音声側から） -->
+  <div id="assign-overlay" class="overlay" hidden>
+    <div class="dialog dialog-wide">
+      <h3>スピーカーに割り当て</h3>
+      <p class="hint">「<strong id="assign-audio-name"></strong>」を割り当てるスピーカーを選択してください。</p>
+      <div id="assign-list" class="audio-list"></div>
+      <p id="assign-error" class="error-msg" hidden></p>
+      <div class="dialog-actions">
+        <button id="btn-assign-cancel" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- スピーカー管理パネル -->
+  <div id="speakers-overlay" class="overlay" hidden>
+    <div class="dialog dialog-wide">
+      <h3>スピーカー管理</h3>
+      <p class="hint">インゲームで Speaker Block を右クリックして一度保存済みのスピーカーが表示されます。</p>
+      <div id="speakers-list" class="audio-list"></div>
+      <p id="speakers-empty" class="empty-msg" hidden>スピーカーが見つかりません。</p>
+      <div class="dialog-actions">
+        <button id="btn-speakers-refresh" class="btn btn-ghost btn-sm">↻ 更新</button>
+        <button id="btn-speakers-close" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 音声ピッカー（スピーカー管理から起動） -->
+  <div id="picker-overlay" class="overlay" hidden>
+    <div class="dialog dialog-wide">
+      <h3>音声を選択</h3>
+      <p class="hint">「<strong id="picker-speaker-name"></strong>」に割り当てる音声を選んでください。</p>
+      <nav id="picker-breadcrumb" class="breadcrumb"></nav>
+      <div id="picker-folder-grid" class="folder-grid"></div>
+      <div id="picker-audio-list" class="audio-list"></div>
+      <p id="picker-empty" class="empty-msg" hidden>フォルダに音声がありません。フォルダを選択してください。</p>
+      <div class="dialog-actions">
+        <button id="btn-picker-close" class="btn btn-ghost">キャンセル</button>
       </div>
     </div>
   </div>

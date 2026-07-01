@@ -21,6 +21,7 @@ async function init() {
   if (!meRes || !meRes.ok) { showError('認証に失敗しました。'); return; }
   me = await meRes.json();
   document.getElementById('player-name').textContent = me.name + (me.isOp ? ' (OP)' : '');
+  if (me.isOp) document.getElementById('btn-speakers').hidden = false;
 
   await reload();
 }
@@ -198,9 +199,10 @@ function renderAudioList(entries, folderId) {
       <button class="btn-icon play" title="再生">▶</button>
       <div class="audio-info">
         <div class="audio-name">${esc(e.displayName)}</div>
-        <div class="audio-meta">${fmtDuration(e.durationTicks)} ・ <span class="mono">${esc(e.cacheFile)}</span></div>
+        <div class="audio-meta">${fmtDuration(e.durationTicks)}</div>
       </div>
-      <button class="btn-icon copy" title="ファイル名をコピー">⧉</button>
+      <button class="btn-icon copy" title="ライブラリ参照をコピー">⧉</button>
+      ${me.isOp ? '<button class="btn-icon assign" title="スピーカーに割り当て">📌</button>' : ''}
       <button class="btn-icon del" title="削除">✕</button>
       <audio preload="none" src="/api/library/${folderId}/audio/${e.id}/preview"></audio>`;
 
@@ -213,7 +215,8 @@ function renderAudioList(entries, folderId) {
       } else { audio.pause(); playBtn.textContent = '▶'; }
     });
     audio.addEventListener('ended', () => { playBtn.textContent = '▶'; });
-    row.querySelector('.copy').addEventListener('click', () => copyText(e.cacheFile));
+    row.querySelector('.copy').addEventListener('click', () => copyText('lib:' + folderId + '/audio/' + e.id));
+    if (me.isOp) row.querySelector('.assign').addEventListener('click', () => openAssignDialog('lib:' + folderId + '/audio/' + e.id, e.displayName));
     row.querySelector('.del').addEventListener('click', () => deleteAudio(folderId, e));
     list.appendChild(row);
   });
@@ -314,9 +317,10 @@ function renderTtsList(entries, folderId) {
       <button class="btn-icon play" title="再生">▶</button>
       <div class="audio-info">
         <div class="audio-name">${esc(e.displayName)}</div>
-        <div class="audio-meta">${esc(e.speakerName || e.speakerId)} ・ ${fmtDuration(e.durationTicks)} ・ <span class="mono">${esc(e.cacheFile)}</span></div>
+        <div class="audio-meta">${esc(e.speakerName || e.speakerId)} ・ ${fmtDuration(e.durationTicks)}</div>
       </div>
-      <button class="btn-icon copy" title="ファイル名をコピー">⧉</button>
+      <button class="btn-icon copy" title="ライブラリ参照をコピー">⧉</button>
+      ${me.isOp ? '<button class="btn-icon assign" title="スピーカーに割り当て">📌</button>' : ''}
       ${isOwner ? '<button class="btn-icon edit" title="編集・再合成">✎</button>' : ''}
       <button class="btn-icon del" title="削除">✕</button>
       <audio preload="none" src="/api/library/${folderId}/tts/${e.id}/preview"></audio>`;
@@ -329,7 +333,8 @@ function renderTtsList(entries, folderId) {
       } else { audio.pause(); playBtn.textContent = '▶'; }
     });
     audio.addEventListener('ended', () => { playBtn.textContent = '▶'; });
-    row.querySelector('.copy').addEventListener('click', () => copyText(e.cacheFile));
+    row.querySelector('.copy').addEventListener('click', () => copyText('lib:' + folderId + '/tts/' + e.id));
+    if (me.isOp) row.querySelector('.assign').addEventListener('click', () => openAssignDialog('lib:' + folderId + '/tts/' + e.id, e.displayName));
     if (isOwner) row.querySelector('.edit').addEventListener('click', () => openEditTtsDialog(e));
     row.querySelector('.del').addEventListener('click', () => deleteTts(folderId, e));
     list.appendChild(row);
@@ -607,13 +612,29 @@ document.getElementById('btn-seq-save').addEventListener('click', saveSeq);
 document.getElementById('seq-overlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeSeqDialog();
 });
+document.getElementById('btn-assign-cancel').addEventListener('click', closeAssignDialog);
+document.getElementById('assign-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeAssignDialog();
+});
+document.getElementById('btn-speakers').addEventListener('click', openSpeakersPanel);
+document.getElementById('btn-speakers-close').addEventListener('click', () => {
+  document.getElementById('speakers-overlay').hidden = true;
+});
+document.getElementById('btn-speakers-refresh').addEventListener('click', refreshSpeakersPanel);
+document.getElementById('speakers-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) document.getElementById('speakers-overlay').hidden = true;
+});
+document.getElementById('btn-picker-close').addEventListener('click', closePickerOverlay);
+document.getElementById('picker-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closePickerOverlay();
+});
 
 init();
 
 // ── Sequence ──────────────────────────────────────────
 let editingSeqEntry   = null;
 let seqDialogSteps    = [];    // [{audioRef, delayTicks, label}]
-let seqAvailableItems = [];    // [{cacheFile, displayName, type}]
+let seqAvailableItems = [];    // [{ref, displayName, type}]
 
 // playback state
 let seqPlayingId    = null;
@@ -632,12 +653,16 @@ async function previewSeq(folderId, entry) {
   ]);
   const cacheMap = new Map();
   if (audioRes?.ok) {
-    (await audioRes.json()).forEach(a =>
-      cacheMap.set(a.cacheFile, '/api/library/' + folderId + '/audio/' + a.id + '/preview'));
+    (await audioRes.json()).forEach(a => {
+      const url = '/api/library/' + folderId + '/audio/' + a.id + '/preview';
+      cacheMap.set('lib:' + folderId + '/audio/' + a.id, url);
+    });
   }
   if (ttsRes?.ok) {
-    (await ttsRes.json()).forEach(t =>
-      cacheMap.set(t.cacheFile, '/api/library/' + folderId + '/tts/' + t.id + '/preview'));
+    (await ttsRes.json()).forEach(t => {
+      const url = '/api/library/' + folderId + '/tts/' + t.id + '/preview';
+      cacheMap.set('lib:' + folderId + '/tts/' + t.id, url);
+    });
   }
 
   const steps = (entry.steps || []).filter(s => s.audioRef && cacheMap.has(s.audioRef));
@@ -745,11 +770,17 @@ async function openSeqDialog(entry) {
   seqAvailableItems = [];
   if (audioRes && audioRes.ok) {
     (await audioRes.json()).forEach(a =>
-      seqAvailableItems.push({ cacheFile: a.cacheFile, displayName: a.displayName, type: 'audio' }));
+      seqAvailableItems.push({
+        ref: 'lib:' + currentId + '/audio/' + a.id,
+        displayName: a.displayName, type: 'audio'
+      }));
   }
   if (ttsRes && ttsRes.ok) {
     (await ttsRes.json()).forEach(t =>
-      seqAvailableItems.push({ cacheFile: t.cacheFile, displayName: t.displayName, type: 'tts' }));
+      seqAvailableItems.push({
+        ref: 'lib:' + currentId + '/tts/' + t.id,
+        displayName: t.displayName, type: 'tts'
+      }));
   }
 
   renderSeqSteps();
@@ -772,14 +803,16 @@ function renderSeqSteps() {
     if (audioOpts.length > 0) {
       opts += `<optgroup label="音声ファイル">`;
       audioOpts.forEach(it => {
-        opts += `<option value="${esc(it.cacheFile)}"${it.cacheFile === step.audioRef ? ' selected' : ''}>${esc(it.displayName)}</option>`;
+        const selected = it.ref === step.audioRef;
+        opts += `<option value="${esc(it.ref)}"${selected ? ' selected' : ''}>${esc(it.displayName)}</option>`;
       });
       opts += `</optgroup>`;
     }
     if (ttsOpts.length > 0) {
       opts += `<optgroup label="TTS セリフ">`;
       ttsOpts.forEach(it => {
-        opts += `<option value="${esc(it.cacheFile)}"${it.cacheFile === step.audioRef ? ' selected' : ''}>${esc(it.displayName)}</option>`;
+        const selected = it.ref === step.audioRef;
+        opts += `<option value="${esc(it.ref)}"${selected ? ' selected' : ''}>${esc(it.displayName)}</option>`;
       });
       opts += `</optgroup>`;
     }
@@ -884,4 +917,328 @@ async function deleteSeq(folderId, entry) {
   if (!confirm(`「${entry.displayName}」を削除しますか？`)) return;
   const res = await api('DELETE', '/library/' + folderId + '/sequences/' + entry.id);
   if (res && res.ok) loadSequences(folderId);
+}
+
+// ── スピーカー割り当てダイアログ ──────────────────────────
+let assignRef  = null;
+let assignName = '';
+
+async function openAssignDialog(ref, name) {
+  assignRef  = ref;
+  assignName = name;
+  document.getElementById('assign-audio-name').textContent = name;
+  document.getElementById('assign-error').hidden = true;
+  document.getElementById('assign-list').innerHTML = '<p class="hint">読み込み中...</p>';
+  document.getElementById('assign-overlay').hidden = false;
+
+  const res = await api('GET', '/blocks/speakers');
+  if (!res || !res.ok) {
+    document.getElementById('assign-list').innerHTML = '<p class="hint" style="color:var(--danger)">スピーカー一覧の取得に失敗しました。</p>';
+    return;
+  }
+  const speakers = await res.json();
+  renderAssignList(speakers);
+}
+
+function renderAssignList(speakers) {
+  const list = document.getElementById('assign-list');
+  if (speakers.length === 0) {
+    list.innerHTML = '<p class="hint">設定済みのスピーカーがありません。<br>インゲームで Speaker Block を右クリックして一度設定を保存してください。</p>';
+    return;
+  }
+  list.innerHTML = '';
+  speakers.forEach(sp => {
+    const row = document.createElement('div');
+    row.className = 'audio-row';
+    const posLabel = `${sp.x}, ${sp.y}, ${sp.z}`;
+    const label    = sp.displayName || `${sp.dim} (${posLabel})`;
+    const audioLabel = sp.audioDisplayName || (sp.audioRef ? '(不明)' : '（未設定）');
+    row.innerHTML = `
+      <div class="audio-info">
+        <div class="audio-name">${esc(label)}</div>
+        <div class="audio-meta">${esc(sp.dim)} (${esc(posLabel)}) ・ 現在: ${esc(audioLabel)}</div>
+      </div>
+      <button class="btn btn-primary btn-sm">割り当て</button>`;
+    row.querySelector('button').addEventListener('click', () => assignToSpeaker(sp));
+    list.appendChild(row);
+  });
+}
+
+async function assignToSpeaker(sp) {
+  const errEl = document.getElementById('assign-error');
+  errEl.hidden = true;
+  const res = await api('POST', '/blocks/speakers/assign', {
+    dim: sp.dim, x: sp.x, y: sp.y, z: sp.z,
+    audioRef: assignRef,
+    trackTitle: '', subtitle: ''
+  });
+  if (!res) return;
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    errEl.textContent = e.error || '割り当てに失敗しました。';
+    errEl.hidden = false;
+    return;
+  }
+  closeAssignDialog();
+}
+
+function closeAssignDialog() {
+  document.getElementById('assign-overlay').hidden = true;
+  assignRef = null;
+}
+
+// ── スピーカー管理パネル ────────────────────────────────────
+let speakersCache = [];   // 最後に取得したスピーカー一覧
+
+async function openSpeakersPanel() {
+  document.getElementById('speakers-overlay').hidden = false;
+  document.getElementById('speakers-empty').hidden = true;
+  document.getElementById('speakers-list').innerHTML = '<p class="hint">読み込み中...</p>';
+  await refreshSpeakersPanel();
+}
+
+async function refreshSpeakersPanel() {
+  const res = await api('GET', '/blocks/speakers');
+  if (!res || !res.ok) {
+    document.getElementById('speakers-list').innerHTML = '<p class="hint" style="color:var(--danger)">取得に失敗しました。</p>';
+    return;
+  }
+  speakersCache = await res.json();
+  renderSpeakerList(speakersCache);
+}
+
+function renderSpeakerList(speakers) {
+  const list  = document.getElementById('speakers-list');
+  const empty = document.getElementById('speakers-empty');
+  list.innerHTML = '';
+  if (speakers.length === 0) {
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+
+  speakers.forEach(sp => {
+    const posLabel = `${sp.x}, ${sp.y}, ${sp.z}`;
+    const nameText = sp.displayName || '';
+    const audioLabel = sp.audioDisplayName || (sp.audioRef ? '(不明)' : '（未設定）');
+
+    const row = document.createElement('div');
+    row.className = 'audio-row';
+    row.innerHTML = `
+      <div class="audio-info sp-info">
+        <div class="sp-name-row">
+          <span class="audio-name sp-name-text">${esc(nameText || `${sp.dim} (${posLabel})`)}</span>
+          <input class="input sp-name-input" type="text" value="${esc(nameText)}" placeholder="スピーカー名" hidden>
+          <button class="btn-icon sp-edit-btn" title="名前を変更">✎</button>
+          <button class="btn-icon sp-save-btn" title="保存" hidden>✓</button>
+          <button class="btn-icon sp-cancel-btn" title="キャンセル" hidden>✕</button>
+        </div>
+        <div class="audio-meta">${esc(sp.dim)} (${esc(posLabel)})</div>
+        <div class="audio-meta sp-audio-label">音声: <strong>${esc(audioLabel)}</strong></div>
+      </div>
+      <button class="btn btn-primary btn-sm sp-pick-btn">音声を選ぶ</button>`;
+
+    const nameText2 = row.querySelector('.sp-name-text');
+    const nameInput = row.querySelector('.sp-name-input');
+    const editBtn   = row.querySelector('.sp-edit-btn');
+    const saveBtn   = row.querySelector('.sp-save-btn');
+    const cancelBtn = row.querySelector('.sp-cancel-btn');
+
+    editBtn.addEventListener('click', () => {
+      nameText2.hidden = true;
+      editBtn.hidden   = true;
+      nameInput.hidden = false;
+      saveBtn.hidden   = false;
+      cancelBtn.hidden = false;
+      nameInput.focus();
+      nameInput.select();
+    });
+    cancelBtn.addEventListener('click', () => {
+      nameInput.hidden = true;
+      saveBtn.hidden   = true;
+      cancelBtn.hidden = true;
+      nameText2.hidden = false;
+      editBtn.hidden   = false;
+    });
+    saveBtn.addEventListener('click', () => saveSpeakerName(sp, nameInput.value.trim(), row));
+    nameInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveSpeakerName(sp, nameInput.value.trim(), row);
+      if (e.key === 'Escape') cancelBtn.click();
+    });
+
+    row.querySelector('.sp-pick-btn').addEventListener('click', () => openPickerForSpeaker(sp));
+    list.appendChild(row);
+  });
+}
+
+async function saveSpeakerName(sp, name, rowEl) {
+  const res = await api('POST', '/blocks/speakers/rename', { dim: sp.dim, x: sp.x, y: sp.y, z: sp.z, name });
+  if (!res || !res.ok) return;
+  sp.displayName = name;
+  const posLabel  = `${sp.x}, ${sp.y}, ${sp.z}`;
+  const nameText2 = rowEl.querySelector('.sp-name-text');
+  nameText2.textContent = name || `${sp.dim} (${posLabel})`;
+  rowEl.querySelector('.sp-name-input').hidden = true;
+  rowEl.querySelector('.sp-save-btn').hidden   = true;
+  rowEl.querySelector('.sp-cancel-btn').hidden = true;
+  nameText2.hidden = false;
+  rowEl.querySelector('.sp-edit-btn').hidden = false;
+}
+
+// ── ライブラリピッカー ──────────────────────────────────────
+let pickerSpeaker    = null;  // 割り当て先のスピーカー
+let pickerFolderStack = [];   // [{id, displayName}]
+
+function openPickerForSpeaker(sp) {
+  pickerSpeaker     = sp;
+  pickerFolderStack = [];
+  document.getElementById('picker-speaker-name').textContent =
+    sp.displayName || `${sp.dim} (${sp.x}, ${sp.y}, ${sp.z})`;
+  document.getElementById('picker-overlay').hidden = false;
+  renderPickerLevel();
+}
+
+function closePickerOverlay() {
+  document.getElementById('picker-overlay').hidden = true;
+  pickerSpeaker     = null;
+  pickerFolderStack = [];
+}
+
+function renderPickerBreadcrumb() {
+  const bc = document.getElementById('picker-breadcrumb');
+  bc.innerHTML = '';
+  const addCrumb = (label, depth) => {
+    const sp = document.createElement('span');
+    sp.className = 'crumb';
+    sp.textContent = label;
+    sp.addEventListener('click', () => {
+      pickerFolderStack = pickerFolderStack.slice(0, depth);
+      renderPickerLevel();
+    });
+    bc.appendChild(sp);
+  };
+  addCrumb('ライブラリ', 0);
+  pickerFolderStack.forEach((f, i) => {
+    const sep = document.createElement('span');
+    sep.className = 'crumb-sep';
+    sep.textContent = '/';
+    bc.appendChild(sep);
+    addCrumb(f.displayName, i + 1);
+  });
+}
+
+function renderPickerLevel() {
+  renderPickerBreadcrumb();
+
+  const currentFolderEntry = pickerFolderStack.length > 0
+    ? pickerFolderStack[pickerFolderStack.length - 1]
+    : null;
+  const currentFolderId = currentFolderEntry ? currentFolderEntry.id : null;
+
+  const subFolders = currentFolderId
+    ? childrenOf(currentFolderId)
+    : topLevel();
+
+  const grid = document.getElementById('picker-folder-grid');
+  grid.innerHTML = '';
+  subFolders.forEach(f => {
+    const card = document.createElement('div');
+    card.className = 'folder-card';
+    card.innerHTML = `<div class="name">${esc(f.displayName)}</div>`;
+    card.addEventListener('click', () => {
+      pickerFolderStack.push({ id: f.id, displayName: f.displayName });
+      renderPickerLevel();
+    });
+    grid.appendChild(card);
+  });
+
+  const audioListEl = document.getElementById('picker-audio-list');
+  const emptyEl     = document.getElementById('picker-empty');
+  audioListEl.innerHTML = '';
+
+  if (!currentFolderId) {
+    emptyEl.hidden = subFolders.length > 0;
+    emptyEl.textContent = 'フォルダを選択してください。';
+    return;
+  }
+
+  // フォルダ内の音声・TTS を取得してリスト表示
+  Promise.all([
+    api('GET', '/library/' + currentFolderId + '/audio'),
+    api('GET', '/library/' + currentFolderId + '/tts')
+  ]).then(async ([audioRes, ttsRes]) => {
+    const audioEntries = (audioRes && audioRes.ok) ? await audioRes.json() : [];
+    const ttsEntries   = (ttsRes   && ttsRes.ok)  ? await ttsRes.json()   : [];
+    renderPickerEntries(currentFolderId, audioEntries, ttsEntries);
+  });
+}
+
+function renderPickerEntries(folderId, audioEntries, ttsEntries) {
+  const audioListEl = document.getElementById('picker-audio-list');
+  const emptyEl     = document.getElementById('picker-empty');
+  audioListEl.innerHTML = '';
+
+  if (audioEntries.length === 0 && ttsEntries.length === 0) {
+    emptyEl.hidden = false;
+    emptyEl.textContent = 'このフォルダに音声がありません。';
+    return;
+  }
+  emptyEl.hidden = true;
+
+  const makePickerRow = (ref, displayName, meta) => {
+    const row = document.createElement('div');
+    row.className = 'audio-row';
+    row.innerHTML = `
+      <div class="audio-info">
+        <div class="audio-name">${esc(displayName)}</div>
+        <div class="audio-meta">${esc(meta)}</div>
+      </div>
+      <button class="btn btn-primary btn-sm">選択</button>`;
+    row.querySelector('button').addEventListener('click', () => pickAudioForSpeaker(ref, displayName));
+    return row;
+  };
+
+  if (audioEntries.length > 0) {
+    const hdr = document.createElement('p');
+    hdr.className = 'hint'; hdr.style.margin = '4px 0';
+    hdr.textContent = '音声ファイル';
+    audioListEl.appendChild(hdr);
+    audioEntries.forEach(e => {
+      audioListEl.appendChild(makePickerRow(
+        'lib:' + folderId + '/audio/' + e.id,
+        e.displayName,
+        fmtDuration(e.durationTicks)
+      ));
+    });
+  }
+  if (ttsEntries.length > 0) {
+    const hdr = document.createElement('p');
+    hdr.className = 'hint'; hdr.style.margin = '8px 0 4px';
+    hdr.textContent = 'TTS セリフ';
+    audioListEl.appendChild(hdr);
+    ttsEntries.forEach(e => {
+      audioListEl.appendChild(makePickerRow(
+        'lib:' + folderId + '/tts/' + e.id,
+        e.displayName,
+        `${esc(e.speakerName || e.speakerId)} ・ ${fmtDuration(e.durationTicks)}`
+      ));
+    });
+  }
+}
+
+async function pickAudioForSpeaker(ref, displayName) {
+  if (!pickerSpeaker) return;
+  const sp = pickerSpeaker;
+  const res = await api('POST', '/blocks/speakers/assign', {
+    dim: sp.dim, x: sp.x, y: sp.y, z: sp.z,
+    audioRef: ref,
+    trackTitle: '', subtitle: ''
+  });
+  if (!res || !res.ok) return;
+  const data = await res.json().catch(() => ({}));
+  closePickerOverlay();
+  // スピーカー管理パネルを更新
+  sp.audioRef         = ref;
+  sp.audioDisplayName = data.audioDisplayName || displayName;
+  renderSpeakerList(speakersCache);
 }

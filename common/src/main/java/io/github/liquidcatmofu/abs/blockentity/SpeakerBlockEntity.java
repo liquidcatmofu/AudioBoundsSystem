@@ -9,6 +9,7 @@ import io.github.liquidcatmofu.abs.data.FalloffCurve;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
+import io.github.liquidcatmofu.abs.library.LibraryRef;
 import io.github.liquidcatmofu.abs.server.ABSHttpServer;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
@@ -28,13 +29,16 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 public class SpeakerBlockEntity extends BlockEntity {
-    private static final String KEY_BOUNDS      = "Bounds";
-    private static final String KEY_CURVE       = "FalloffCurve";
-    private static final String KEY_AUDIO_FILE  = "AudioFile";
-    private static final String KEY_TRACK_TITLE = "TrackTitle";
-    private static final String KEY_SUBTITLE    = "Subtitle";
+    private static final String KEY_BOUNDS           = "Bounds";
+    private static final String KEY_CURVE            = "FalloffCurve";
+    private static final String KEY_AUDIO_FILE       = "AudioFile";
+    private static final String KEY_TRACK_TITLE      = "TrackTitle";
+    private static final String KEY_SUBTITLE         = "Subtitle";
     private static final String KEY_SUBTITLE_ENABLED = "SubtitleEnabled";
-    private static final String KEY_REDSTONE_MODE = "RedstoneMode";
+    private static final String KEY_REDSTONE_MODE    = "RedstoneMode";
+    private static final String KEY_DISPLAY_NAME      = "DisplayName";
+    private static final String KEY_OWNER_UUID        = "OwnerUuid";
+    private static final String KEY_AUDIO_DISPLAY_NAME = "AudioDisplayName";
 
     private AudioBounds  bounds      = AudioBounds.DEFAULT;
     private FalloffCurve falloffCurve = FalloffCurve.LOGARITHMIC;
@@ -43,6 +47,9 @@ public class SpeakerBlockEntity extends BlockEntity {
     private String       trackTitle  = "";
     private String       subtitle    = "";
     private boolean      subtitleEnabled = true;
+    private String       displayName      = "";
+    private UUID         ownerUuid        = null;
+    private String       audioDisplayName = "";
     private boolean      redstonePowered = false;
 
     // 再生状態はトランジェント（NBT 保存しない）
@@ -64,6 +71,9 @@ public class SpeakerBlockEntity extends BlockEntity {
     public boolean      isPlaying()      { return playing;      }
     public boolean      isRedstonePowered() { return redstonePowered; }
     public RedstoneMode getRedstoneMode() { return redstoneMode; }
+    public String       getDisplayName()      { return displayName;      }
+    public UUID         getOwnerUuid()        { return ownerUuid;        }
+    public String       getAudioDisplayName() { return audioDisplayName; }
 
     public void setBounds(AudioBounds bounds) {
         this.bounds = bounds;
@@ -103,7 +113,24 @@ public class SpeakerBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    public void applyLoadedConfig(AudioBounds bounds, FalloffCurve curve, RedstoneMode redstoneMode, String audioFile, boolean subtitleEnabled, String trackTitle, String subtitle) {
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName == null ? "" : displayName;
+        setChanged();
+    }
+
+    public void setOwnerUuid(UUID ownerUuid) {
+        this.ownerUuid = ownerUuid;
+        setChanged();
+    }
+
+    public void setAudioDisplayName(String name) {
+        this.audioDisplayName = name == null ? "" : name;
+        setChanged();
+    }
+
+    public void applyLoadedConfig(AudioBounds bounds, FalloffCurve curve, RedstoneMode redstoneMode,
+                                  String audioFile, boolean subtitleEnabled, String trackTitle,
+                                  String subtitle, String displayName) {
         this.bounds = bounds;
         this.falloffCurve = curve;
         this.redstoneMode = redstoneMode == null ? RedstoneMode.LEVEL : redstoneMode;
@@ -111,6 +138,8 @@ public class SpeakerBlockEntity extends BlockEntity {
         this.subtitleEnabled = subtitleEnabled;
         this.trackTitle = trackTitle == null ? "" : trackTitle;
         this.subtitle = subtitle == null ? "" : subtitle;
+        this.displayName = displayName == null ? "" : displayName;
+        // ownerUuid はここでは変更しない（ブロック設置時またはTOMLからのみ設定）
         setChanged();
     }
 
@@ -154,9 +183,9 @@ public class SpeakerBlockEntity extends BlockEntity {
             return;
         }
 
-        Path path = ABSHttpServer.getCacheDir().resolve(audioFile);
-        if (!Files.exists(path)) {
-            AudioBoundsSystem.LOGGER.warn("ABS: Audio file not found: {}", path);
+        Path path = LibraryRef.resolve(audioFile).orElse(null);
+        if (path == null) {
+            AudioBoundsSystem.LOGGER.warn("ABS: Could not resolve audio ref: {}", audioFile);
             return;
         }
 
@@ -239,6 +268,11 @@ public class SpeakerBlockEntity extends BlockEntity {
         tag.putString(KEY_SUBTITLE, subtitle);
         tag.putBoolean(KEY_SUBTITLE_ENABLED, subtitleEnabled);
         tag.putString(KEY_REDSTONE_MODE, redstoneMode.name());
+        tag.putString(KEY_DISPLAY_NAME, displayName);
+        tag.putString(KEY_AUDIO_DISPLAY_NAME, audioDisplayName);
+        if (ownerUuid != null) {
+            tag.putUUID(KEY_OWNER_UUID, ownerUuid);
+        }
     }
 
     @Override
@@ -264,6 +298,15 @@ public class SpeakerBlockEntity extends BlockEntity {
         }
         if (tag.contains(KEY_SUBTITLE_ENABLED)) {
             subtitleEnabled = tag.getBoolean(KEY_SUBTITLE_ENABLED);
+        }
+        if (tag.contains(KEY_DISPLAY_NAME)) {
+            displayName = tag.getString(KEY_DISPLAY_NAME);
+        }
+        if (tag.contains(KEY_AUDIO_DISPLAY_NAME)) {
+            audioDisplayName = tag.getString(KEY_AUDIO_DISPLAY_NAME);
+        }
+        if (tag.hasUUID(KEY_OWNER_UUID)) {
+            ownerUuid = tag.getUUID(KEY_OWNER_UUID);
         }
         loadTomlConfigIfReady();
     }

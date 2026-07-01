@@ -24,12 +24,13 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Environment(EnvType.CLIENT)
 public final class SpeakerConfigScreen extends Screen {
-    private static final int PANEL_WIDTH = 300;
-    private static final int ROW_HEIGHT = 24;
-    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 14 + 34;
+    private static final int PANEL_WIDTH   = 300;
+    private static final int ROW_HEIGHT    = 24;
+    private static final int CONTENT_HEIGHT = ROW_HEIGHT * 16 + 34;
     private static final int SCREEN_MARGIN = 12;
 
     private final BlockPos pos;
@@ -40,11 +41,13 @@ public final class SpeakerConfigScreen extends Screen {
     private RedstoneMode redstoneMode;
     private boolean subtitleEnabled;
     private int scrollOffset = 0;
+    private String  selectedAudioRef   = "";
+    private String  selectedAudioLabel = "";
+    private EditBox displayNameBox;
     private EditBox radius;
     private EditBox widthValue;
     private EditBox depth;
     private EditBox heightValue;
-    private EditBox audioFile;
     private EditBox trackTitle;
     private EditBox subtitle;
     private Component error = Component.empty();
@@ -59,6 +62,8 @@ public final class SpeakerConfigScreen extends Screen {
         this.falloffCurve = speaker == null ? FalloffCurve.LOGARITHMIC : speaker.getFalloffCurve();
         this.redstoneMode = speaker == null ? RedstoneMode.LEVEL : speaker.getRedstoneMode();
         this.subtitleEnabled = speaker == null || speaker.isSubtitleEnabled();
+        this.selectedAudioRef   = speaker == null ? "" : speaker.getAudioFile();
+        this.selectedAudioLabel = speaker == null ? "" : speaker.getAudioDisplayName();
     }
 
     @Override
@@ -70,53 +75,77 @@ public final class SpeakerConfigScreen extends Screen {
         SpeakerBlockEntity speaker = currentSpeaker();
         AudioBounds bounds = speaker == null ? AudioBounds.DEFAULT : speaker.getBounds();
 
+        // Row 1: スピーカー表示名
+        displayNameBox = new EditBox(this.font, x + 110, y + ROW_HEIGHT, PANEL_WIDTH - 110, 20, Component.literal("Name"));
+        displayNameBox.setMaxLength(128);
+        displayNameBox.setValue(speaker == null ? "" : speaker.getDisplayName());
+        addPositionedWidget(displayNameBox, ROW_HEIGHT);
+
+        // Row 2–5: エリア設定
         addPositionedWidget(CycleButton.<BoundsShape>builder(value -> Component.literal(value.name()))
                 .withValues(BoundsShape.values())
                 .withInitialValue(shape)
-                .create(x, y + ROW_HEIGHT, PANEL_WIDTH, 20, Component.literal("Shape"), (button, value) -> shape = value), ROW_HEIGHT);
-        radius = addEditBox(x + 110, y + ROW_HEIGHT * 2, 90, "Radius", bounds.getRadius());
-        widthValue = addEditBox(x + 110, y + ROW_HEIGHT * 3, 90, "Width", bounds.getWidth());
-        heightValue = addEditBox(x + 110, y + ROW_HEIGHT * 4, 90, "Height", bounds.getHeight());
-        depth = addEditBox(x + 110, y + ROW_HEIGHT * 5, 90, "Depth", bounds.getDepth());
+                .create(x, y + ROW_HEIGHT * 2, PANEL_WIDTH, 20, Component.literal("Shape"), (button, value) -> shape = value), ROW_HEIGHT * 2);
+        radius     = addEditBox(x + 110, y + ROW_HEIGHT * 3, 90, "Radius",  bounds.getRadius());
+        widthValue = addEditBox(x + 110, y + ROW_HEIGHT * 4, 90, "Width",   bounds.getWidth());
+        heightValue= addEditBox(x + 110, y + ROW_HEIGHT * 5, 90, "Height",  bounds.getHeight());
+        depth      = addEditBox(x + 110, y + ROW_HEIGHT * 6, 90, "Depth",   bounds.getDepth());
 
+        // Row 7–8: Falloff / Redstone
         addPositionedWidget(CycleButton.<FalloffCurve>builder(value -> Component.literal(value.name()))
                 .withValues(FalloffCurve.values())
                 .withInitialValue(falloffCurve)
-                .create(x, y + ROW_HEIGHT * 6, PANEL_WIDTH, 20, Component.literal("Falloff"), (button, value) -> falloffCurve = value), ROW_HEIGHT * 6);
-
+                .create(x, y + ROW_HEIGHT * 7, PANEL_WIDTH, 20, Component.literal("Falloff"), (button, value) -> falloffCurve = value), ROW_HEIGHT * 7);
         addPositionedWidget(CycleButton.<RedstoneMode>builder(value -> Component.literal(value.name()))
                 .withValues(RedstoneMode.values())
                 .withInitialValue(redstoneMode)
-                .create(x, y + ROW_HEIGHT * 7, PANEL_WIDTH, 20, Component.literal("Redstone"), (button, value) -> redstoneMode = value), ROW_HEIGHT * 7);
+                .create(x, y + ROW_HEIGHT * 8, PANEL_WIDTH, 20, Component.literal("Redstone"), (button, value) -> redstoneMode = value), ROW_HEIGHT * 8);
 
-        audioFile = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 8, PANEL_WIDTH - 110, 20, Component.literal("Audio file"));
-        audioFile.setMaxLength(256);
-        audioFile.setValue(speaker == null ? "" : speaker.getAudioFile());
-        addPositionedWidget(audioFile, ROW_HEIGHT * 8);
+        // Row 9: 音声選択（表示名 + Browse + ✕）
+        int browseW = 70;
+        int clearW  = 20;
+        addPositionedWidget(Button.builder(Component.literal("Browse..."), btn -> openLibraryBrowser())
+                .bounds(x + PANEL_WIDTH - clearW - 2 - browseW, y + ROW_HEIGHT * 9, browseW, 20)
+                .build(), ROW_HEIGHT * 9);
+        Button clearAudioBtn = Button.builder(Component.literal("✕"), btn -> {
+                    selectedAudioRef   = "";
+                    selectedAudioLabel = "";
+                    rebuildWidgets();
+                })
+                .bounds(x + PANEL_WIDTH - clearW, y + ROW_HEIGHT * 9, clearW, 20)
+                .build();
+        clearAudioBtn.active = !selectedAudioRef.isEmpty();
+        addPositionedWidget(clearAudioBtn, ROW_HEIGHT * 9);
 
+        // Row 10–12: 字幕設定
         addPositionedWidget(Button.builder(subtitleEnabledLabel(), button -> {
                     subtitleEnabled = !subtitleEnabled;
                     button.setMessage(subtitleEnabledLabel());
                 })
-                .bounds(x, y + ROW_HEIGHT * 9, PANEL_WIDTH, 20)
-                .build(), ROW_HEIGHT * 9);
+                .bounds(x, y + ROW_HEIGHT * 10, PANEL_WIDTH, 20)
+                .build(), ROW_HEIGHT * 10);
 
-        trackTitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 10, PANEL_WIDTH - 110, 20, Component.literal("Track title"));
+        trackTitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 11, PANEL_WIDTH - 110, 20, Component.literal("Track title"));
         trackTitle.setMaxLength(128);
         trackTitle.setValue(speaker == null ? "" : speaker.getTrackTitle());
-        addPositionedWidget(trackTitle, ROW_HEIGHT * 10);
+        addPositionedWidget(trackTitle, ROW_HEIGHT * 11);
 
-        subtitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 11, PANEL_WIDTH - 110, 20, Component.literal("Subtitle"));
+        subtitle = new EditBox(this.font, x + 110, y + ROW_HEIGHT * 12, PANEL_WIDTH - 110, 20, Component.literal("Subtitle"));
         subtitle.setMaxLength(512);
         subtitle.setValue(speaker == null ? "" : speaker.getSubtitle());
-        addPositionedWidget(subtitle, ROW_HEIGHT * 11);
+        addPositionedWidget(subtitle, ROW_HEIGHT * 12);
 
-        addPositionedWidget(Button.builder(Component.literal("Save"), button -> save())
-                .bounds(x + PANEL_WIDTH - 154, y + ROW_HEIGHT * 12 + 4, 74, 20)
-                .build(), ROW_HEIGHT * 12 + 4);
+        // Row 13: Save / Cancel
+        boolean saveEnabled = canSave();
+        Button saveBtn = Button.builder(Component.literal("Save"), button -> save())
+                .bounds(x + PANEL_WIDTH - 154, y + ROW_HEIGHT * 13 + 4, 74, 20)
+                .build();
+        saveBtn.active = saveEnabled;
+        addPositionedWidget(saveBtn, ROW_HEIGHT * 13 + 4);
         addPositionedWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
-                .bounds(x + PANEL_WIDTH - 74, y + ROW_HEIGHT * 12 + 4, 74, 20)
-                .build(), ROW_HEIGHT * 12 + 4);
+                .bounds(x + PANEL_WIDTH - 74, y + ROW_HEIGHT * 13 + 4, 74, 20)
+                .build(), ROW_HEIGHT * 13 + 4);
+
         updateWidgetPositions();
     }
 
@@ -126,15 +155,30 @@ public final class SpeakerConfigScreen extends Screen {
         int x = (this.width - PANEL_WIDTH) / 2;
         int y = contentTop();
         graphics.drawCenteredString(this.font, this.title, this.width / 2, y, 0xFFFFFF);
-        drawLabel(graphics, "Radius", x, y + ROW_HEIGHT * 2 + 6);
-        drawLabel(graphics, "Width", x, y + ROW_HEIGHT * 3 + 6);
-        drawLabel(graphics, "Height", x, y + ROW_HEIGHT * 4 + 6);
-        drawLabel(graphics, "Depth", x, y + ROW_HEIGHT * 5 + 6);
-        drawLabel(graphics, "Audio file", x, y + ROW_HEIGHT * 8 + 6);
-        drawLabel(graphics, "Track title", x, y + ROW_HEIGHT * 10 + 6);
-        drawLabel(graphics, "Subtitle", x, y + ROW_HEIGHT * 11 + 6);
-        if (error != Component.empty()) {
-            graphics.drawString(this.font, error, x, y + ROW_HEIGHT * 12 - 2, 0xFF6666);
+        drawLabel(graphics, "Name",       x, y + ROW_HEIGHT + 6);
+        drawLabel(graphics, "Radius",     x, y + ROW_HEIGHT * 3 + 6);
+        drawLabel(graphics, "Width",      x, y + ROW_HEIGHT * 4 + 6);
+        drawLabel(graphics, "Height",     x, y + ROW_HEIGHT * 5 + 6);
+        drawLabel(graphics, "Depth",      x, y + ROW_HEIGHT * 6 + 6);
+        drawLabel(graphics, "Audio",      x, y + ROW_HEIGHT * 9 + 6);
+        drawLabel(graphics, "Track title",x, y + ROW_HEIGHT * 11 + 6);
+        drawLabel(graphics, "Subtitle",   x, y + ROW_HEIGHT * 12 + 6);
+
+        // 選択中の音声表示名
+        int browseW = 70;
+        int clearW  = 20;
+        int audioTextMaxW = PANEL_WIDTH - 110 - browseW - clearW - 8;
+        String audioText  = selectedAudioRef.isEmpty() ? "（未選択）"
+                : (selectedAudioLabel.isEmpty() ? "（名称不明）" : selectedAudioLabel);
+        int audioColor    = selectedAudioRef.isEmpty() ? 0x808080 : 0xFFFFFF;
+        graphics.drawString(font, fitText(audioText, audioTextMaxW), x + 110, y + ROW_HEIGHT * 9 + 6, audioColor);
+
+        if (!canSave()) {
+            graphics.drawString(this.font,
+                    Component.literal("You are not the owner of this speaker."),
+                    x, y + ROW_HEIGHT * 14, 0xFF6666);
+        } else if (error != Component.empty()) {
+            graphics.drawString(this.font, error, x, y + ROW_HEIGHT * 14, 0xFF6666);
         }
         super.render(graphics, mouseX, mouseY, partialTick);
     }
@@ -155,10 +199,21 @@ public final class SpeakerConfigScreen extends Screen {
         Minecraft.getInstance().setScreen(parent);
     }
 
+    private void openLibraryBrowser() {
+        Minecraft.getInstance().setScreen(new LibraryBrowserScreen(this, false, (ref, label) -> {
+            selectedAudioRef   = ref;
+            selectedAudioLabel = label;
+        }));
+    }
+
     private void save() {
+        if (!canSave()) {
+            error = Component.literal("You are not the owner of this speaker.");
+            return;
+        }
         double parsedRadius = parsePositive(radius);
-        double parsedWidth = parsePositive(widthValue);
-        double parsedDepth = parsePositive(depth);
+        double parsedWidth  = parsePositive(widthValue);
+        double parsedDepth  = parsePositive(depth);
         double parsedHeight = parsePositive(heightValue);
         if (Double.isNaN(parsedRadius) || Double.isNaN(parsedWidth) || Double.isNaN(parsedDepth) || Double.isNaN(parsedHeight)) {
             error = Component.literal("Use positive numeric values.");
@@ -174,12 +229,24 @@ public final class SpeakerConfigScreen extends Screen {
         buf.writeDouble(parsedHeight);
         buf.writeEnum(falloffCurve);
         buf.writeEnum(redstoneMode);
-        buf.writeUtf(audioFile.getValue(), 256);
+        buf.writeUtf(selectedAudioRef, 256);
         buf.writeBoolean(subtitleEnabled);
         buf.writeUtf(trackTitle.getValue(), 128);
         buf.writeUtf(subtitle.getValue(), 512);
+        buf.writeUtf(displayNameBox.getValue(), 128);
         NetworkManager.sendToServer(ABSNetwork.SAVE_SPEAKER_CONFIG, buf);
         onClose();
+    }
+
+    /** プレイヤーがこのスピーカーの設定を保存できるか（クライアント側判定）。 */
+    private boolean canSave() {
+        SpeakerBlockEntity speaker = currentSpeaker();
+        if (speaker == null) return false;
+        UUID ownerUuid = speaker.getOwnerUuid();
+        if (ownerUuid == null) return true;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return false;
+        return ownerUuid.equals(mc.player.getUUID()) || mc.player.hasPermissions(2);
     }
 
     private EditBox addEditBox(int x, int y, int editWidth, String name, double value) {
@@ -205,9 +272,7 @@ public final class SpeakerConfigScreen extends Screen {
 
     private SpeakerBlockEntity currentSpeaker() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null) {
-            return null;
-        }
+        if (minecraft.level == null) return null;
         BlockEntity blockEntity = minecraft.level.getBlockEntity(pos);
         return blockEntity instanceof SpeakerBlockEntity speaker ? speaker : null;
     }
@@ -236,6 +301,13 @@ public final class SpeakerConfigScreen extends Screen {
         graphics.drawString(this.font, Component.literal(label), x, y, 0xA0A0A0);
     }
 
-    private record PositionedWidget(AbstractWidget widget, int baseY) {
+    private String fitText(String text, int maxWidth) {
+        if (font.width(text) <= maxWidth) return text;
+        while (!text.isEmpty() && font.width(text + "...") > maxWidth) {
+            text = text.substring(0, text.length() - 1);
+        }
+        return text + "...";
     }
+
+    private record PositionedWidget(AbstractWidget widget, int baseY) {}
 }
