@@ -1,6 +1,8 @@
 package io.github.liquidcatmofu.abs.tts;
 
 import io.github.liquidcatmofu.abs.tts.api.TTSProvider;
+import io.github.liquidcatmofu.abs.tts.cache.TTSAudioCache;
+import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSBridge;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSEngine;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSParam;
@@ -13,6 +15,8 @@ import java.util.Map;
 
 /** common の {@link TTSBridge} を tts-addon の {@link TTSProviderRegistry} で実装する。 */
 public class AddonTTSBridge implements TTSBridge {
+    private static final int CACHE_LOCK_COUNT = 64;
+    private static final Object[] CACHE_LOCKS = createCacheLocks();
 
     @Override
     public boolean isAvailable() {
@@ -51,7 +55,24 @@ public class AddonTTSBridge implements TTSBridge {
             throw new IllegalArgumentException("Unknown TTS engine: " + request.engineId);
         }
         validateRequest(provider, request);
-        return provider.synthesizeToOgg(request.text, request.speakerId, request.params);
+        String cacheKey = TTSAudioCache.computeKey(
+                request.engineId, request.speakerId, request.text, request.params);
+        Object lock = CACHE_LOCKS[Math.floorMod(cacheKey.hashCode(), CACHE_LOCKS.length)];
+        synchronized (lock) {
+            byte[] cached = TTSAudioCache.load(
+                    request.engineId, request.speakerId, request.text, request.params).orElse(null);
+            if (cached != null) return cached;
+
+            byte[] synthesized = provider.synthesizeToOgg(request.text, request.speakerId, request.params);
+            AudioContent.requireOgg(synthesized);
+            try {
+                TTSAudioCache.save(request.engineId, request.speakerId, request.text,
+                        request.params, synthesized);
+            } catch (java.io.IOException e) {
+                TTSAddon.LOGGER.warn("ABS TTS: failed to cache synthesis result", e);
+            }
+            return synthesized;
+        }
     }
 
     private void validateRequest(TTSProvider provider, TTSSynthesisRequest request) {
@@ -93,5 +114,11 @@ public class AddonTTSBridge implements TTSBridge {
             if (p.getId().equals(id)) return p;
         }
         return null;
+    }
+
+    private static Object[] createCacheLocks() {
+        Object[] locks = new Object[CACHE_LOCK_COUNT];
+        for (int i = 0; i < locks.length; i++) locks[i] = new Object();
+        return locks;
     }
 }

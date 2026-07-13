@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -52,14 +53,7 @@ public final class FfmpegTranscoder {
         try {
             Files.write(inputFile, input);
 
-            ProcessBuilder pb = new ProcessBuilder(
-                    executable, "-y",
-                    "-i", inputFile.toString(),
-                    "-vn",
-                    "-c:a", "libvorbis",
-                    "-q:a", "4",
-                    outputOgg.toString()
-            );
+            ProcessBuilder pb = new ProcessBuilder(buildCommand(executable, inputFile, outputOgg));
             pb.redirectErrorStream(true);
             pb.redirectOutput(ffmpegLog.toFile());
             Process proc = pb.start();
@@ -88,6 +82,19 @@ public final class FfmpegTranscoder {
             Files.deleteIfExists(ffmpegLog);
             Files.deleteIfExists(tempDir);
         }
+    }
+
+    static List<String> buildCommand(String executable, Path inputFile, Path outputOgg) {
+        return List.of(
+                executable, "-y",
+                "-i", inputFile.toString(),
+                "-vn",
+                "-c:a", "libvorbis",
+                "-q:a", "4",
+                // Oggのランダムなstream serialと可変encoder tagを固定し、同一入力のSHA-256を安定させる。
+                "-fflags", "+bitexact",
+                outputOgg.toString()
+        );
     }
 
     private static void terminate(Process process) {

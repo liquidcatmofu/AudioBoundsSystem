@@ -11,9 +11,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 
 public final class TTSAudioCache {
+    private static final long MAX_CACHE_FILE_BYTES = 64L * 1024L * 1024L;
     private static Path cacheDir;
 
     private TTSAudioCache() {}
@@ -47,8 +49,7 @@ public final class TTSAudioCache {
      * 合成結果を一意に表す完全なキャッシュキーを返す。
      * パラメータはキー名でソートするため、Map の反復順序には依存しない。
      *
-     * <p>既存の {@link #computeKey(String, String)} はコマンド側キャッシュとの
-     * 互換性維持のため変更せず、新規統合ではこの形式を使用する。</p>
+     * <p>{@link #computeKey(String, String)} は簡易コマンド用、こちらはWebUI/API合成用。</p>
      */
     public static String computeKey(String engineId, String speakerId, String text,
                                     Map<String, Double> params) {
@@ -94,6 +95,39 @@ public final class TTSAudioCache {
 
     public static boolean exists(String speakerId, String text) {
         return cacheDir != null && Files.exists(resolve(speakerId, text));
+    }
+
+    public static Optional<byte[]> load(String engineId, String speakerId, String text,
+                                        Map<String, Double> params) {
+        if (cacheDir == null) return Optional.empty();
+        Path path = resolve(engineId, speakerId, text, params);
+        try {
+            if (!AudioContent.hasOggHeader(path)) {
+                Files.deleteIfExists(path);
+                return Optional.empty();
+            }
+            long size = Files.size(path);
+            if (size <= 0 || size > MAX_CACHE_FILE_BYTES) {
+                Files.deleteIfExists(path);
+                return Optional.empty();
+            }
+            return Optional.of(Files.readAllBytes(path));
+        } catch (IOException | RuntimeException e) {
+            TTSAddon.LOGGER.warn("ABS TTS: failed to read synthesis cache {}", path, e);
+            return Optional.empty();
+        }
+    }
+
+    public static void save(String engineId, String speakerId, String text,
+                            Map<String, Double> params, byte[] oggBytes) throws IOException {
+        if (cacheDir == null) return;
+        AudioContent.requireOgg(oggBytes);
+        AtomicFiles.write(resolve(engineId, speakerId, text, params), oggBytes);
+    }
+
+    private static Path resolve(String engineId, String speakerId, String text,
+                                Map<String, Double> params) {
+        return cacheDir.resolve(computeKey(engineId, speakerId, text, params) + ".ogg");
     }
 
     /**

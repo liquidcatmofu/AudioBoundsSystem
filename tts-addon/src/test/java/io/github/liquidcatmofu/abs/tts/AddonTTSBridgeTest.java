@@ -6,8 +6,11 @@ import io.github.liquidcatmofu.abs.ttsbridge.TTSSpeaker;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import io.github.liquidcatmofu.abs.tts.cache.TTSAudioCache;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AddonTTSBridgeTest {
     private static final CapturingProvider PROVIDER = new CapturingProvider();
+
+    @TempDir
+    Path tempDir;
 
     @BeforeAll
     static void registerFakeProvider() {
@@ -34,7 +40,7 @@ class AddonTTSBridgeTest {
 
         byte[] result = new AddonTTSBridge().synthesize(request);
 
-        assertArrayEquals("fake-ogg".getBytes(StandardCharsets.UTF_8), result);
+        assertArrayEquals("OggS-fake".getBytes(StandardCharsets.UTF_8), result);
         assertEquals(request.text, PROVIDER.text);
         assertEquals(request.speakerId, PROVIDER.speakerId);
         assertEquals(request.params, PROVIDER.params);
@@ -80,6 +86,21 @@ class AddonTTSBridgeTest {
                 () -> new AddonTTSBridge().synthesize(nonFinite));
     }
 
+    @Test
+    void reusesACompleteRequestCacheBeforeCallingTheProviderAgain() throws Exception {
+        TTSAudioCache.init(tempDir);
+        TTSSynthesisRequest request = validRequest();
+        request.text = "cache-test-" + System.nanoTime();
+        request.params.put("speedScale", 1.2);
+        int before = PROVIDER.synthesisCount;
+
+        byte[] first = new AddonTTSBridge().synthesize(request);
+        byte[] second = new AddonTTSBridge().synthesize(request);
+
+        assertArrayEquals(first, second);
+        assertEquals(before + 1, PROVIDER.synthesisCount);
+    }
+
     private static TTSSynthesisRequest validRequest() {
         TTSSynthesisRequest request = new TTSSynthesisRequest();
         request.engineId = PROVIDER.getId();
@@ -92,6 +113,7 @@ class AddonTTSBridgeTest {
         private String text;
         private String speakerId;
         private Map<String, Double> params;
+        private int synthesisCount;
 
         @Override public String getId() { return "fake-regression-provider"; }
         @Override public String getDisplayName() { return "Fake Regression Provider"; }
@@ -104,10 +126,11 @@ class AddonTTSBridgeTest {
         }
         @Override
         public byte[] synthesizeToOgg(String text, String speakerId, Map<String, Double> params) {
+            synthesisCount++;
             this.text = text;
             this.speakerId = speakerId;
             this.params = Map.copyOf(params);
-            return "fake-ogg".getBytes(StandardCharsets.UTF_8);
+            return "OggS-fake".getBytes(StandardCharsets.UTF_8);
         }
     }
 }

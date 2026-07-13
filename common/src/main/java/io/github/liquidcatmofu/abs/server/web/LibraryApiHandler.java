@@ -409,6 +409,12 @@ public class LibraryApiHandler implements HttpHandler {
         String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
         String speakerName = body.has("speakerName") ? body.get("speakerName").getAsString() : null;
 
+        TtsEntry existing = LibraryTts.findByRequest(folderId, req).orElse(null);
+        if (existing != null) {
+            WebAuthHelper.sendJson(exchange, 200, GSON.toJson(existing));
+            return;
+        }
+
         if (!acquireSynthesisSlot(exchange)) {
             return;
         }

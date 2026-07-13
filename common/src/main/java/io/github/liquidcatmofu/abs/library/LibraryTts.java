@@ -68,11 +68,11 @@ public final class LibraryTts {
         Files.createDirectories(dir);
 
         AudioContent.requireOgg(ogg);
-        String contentHash = AudioContent.sha256(ogg);
-        TtsEntry duplicate = findDuplicate(folderId, req, contentHash);
+        TtsEntry duplicate = findByRequest(folderId, req).orElse(null);
         if (duplicate != null) {
             return duplicate;
         }
+        String contentHash = AudioContent.sha256(ogg);
 
         String id = UUID.randomUUID().toString();
         String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
@@ -190,27 +190,29 @@ public final class LibraryTts {
         return entry == null ? Optional.empty() : ABSHttpServer.resolveCacheFile(entry.cacheFile);
     }
 
+    /** 同一の合成入力を持ち、再利用可能なOggが存在するエントリを返す。 */
+    public static Optional<TtsEntry> findByRequest(String folderId, TTSSynthesisRequest req) {
+        if (!ABSLibrary.isSafeId(folderId) || req == null) return Optional.empty();
+        for (TtsEntry entry : list(folderId)) {
+            if (!sameSynthesisRequest(entry, req)) continue;
+            Path cached = cacheFilePath(entry).orElse(null);
+            if (cached != null && AudioContent.hasOggHeader(cached)) return Optional.of(entry);
+        }
+        return Optional.empty();
+    }
+
     private static String trimForName(String text) {
         if (text == null) return "TTS";
         String t = text.strip();
         return t.length() > 20 ? t.substring(0, 20) + "…" : t;
     }
 
-    private static TtsEntry findDuplicate(String folderId, TTSSynthesisRequest req, String contentHash) {
-        for (TtsEntry entry : list(folderId)) {
-            if (!java.util.Objects.equals(entry.engineId, req.engineId)
-                    || !java.util.Objects.equals(entry.speakerId, req.speakerId)
-                    || !java.util.Objects.equals(entry.text, req.text)
-                    || !normalizedParams(entry.params).equals(normalizedParams(req.params))
-                    || !contentHash.equals(entry.contentHash)) {
-                continue;
-            }
-            Path cached = cacheFilePath(entry).orElse(null);
-            if (cached != null && AudioContent.hasOggHeader(cached)) {
-                return entry;
-            }
-        }
-        return null;
+    static boolean sameSynthesisRequest(TtsEntry entry, TTSSynthesisRequest req) {
+        return entry != null && req != null
+                && java.util.Objects.equals(entry.engineId, req.engineId)
+                && java.util.Objects.equals(entry.speakerId, req.speakerId)
+                && java.util.Objects.equals(entry.text, req.text)
+                && normalizedParams(entry.params).equals(normalizedParams(req.params));
     }
 
     private static Map<String, Double> normalizedParams(Map<String, Double> params) {

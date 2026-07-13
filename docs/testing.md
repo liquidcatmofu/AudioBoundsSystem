@@ -212,3 +212,29 @@ BUILD SUCCESSFUL in 17s
 Twenty-seven tests now pass: 20 in `common` and 7 in `tts-addon`. New coverage verifies rejection of cache paths outside (or below) the root cache directory, root-level orphan deletion, protection of referenced/recent files, and preservation of TTS cache subdirectories.
 
 Runtime verification is still required for maintenance shutdown and orphan cleanup while WebUI uploads or TTS re-synthesis are active.
+
+## Pre-synthesis TTS cache
+
+```text
+rtk ./gradlew :tts-addon:test
+BUILD SUCCESSFUL in 18s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 1m 3s
+```
+
+Thirty tests now pass across the project: 21 in `common` and 9 in `tts-addon`. New coverage verifies validated full-request cache persistence, corrupt-entry deletion, reuse of a cached result without a second Provider invocation, and request-based duplicate identity independent of generated Ogg bytes.
+
+Manual verification is still required with a real Provider to confirm that repeated WebUI requests skip both the Provider HTTP call and FFmpeg process.
+
+## Deterministic Ogg output
+
+Two independently generated Ogg files for the same VOICEVOX request had different whole-file hashes but identical size, stream properties, duration and decoded PCM SHA-256. Byte differences were limited to Ogg stream serial fields and their page CRCs. Re-encoding twice with `-fflags +bitexact` produced byte-identical Ogg files. A command-construction regression test now requires that flag in the shared Core transcoder.
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 31s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 54s
+```
