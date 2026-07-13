@@ -1,51 +1,47 @@
 package io.github.liquidcatmofu.abs.client.audio;
 
+import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.client.sound.ABSDynamicSoundStore;
 import io.github.liquidcatmofu.abs.client.sound.ABSSpeakerSoundInstance;
-import io.github.liquidcatmofu.abs.server.ABSHttpServer;
+import io.github.liquidcatmofu.abs.network.ABSNetwork;
+import io.github.liquidcatmofu.abs.network.ChunkedTransferAssembler;
+import io.github.liquidcatmofu.abs.server.AudioTransferService;
+import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 
-import java.io.InputStream;
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Environment(EnvType.CLIENT)
 public final class SpeakerAudioManager {
     public static final SpeakerAudioManager INSTANCE = new SpeakerAudioManager();
-    private static final int MAX_AUDIO_BYTES = 64 * 1024 * 1024;
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final long REQUEST_TIMEOUT_SECONDS = 30;
 
     private final Map<BlockPos, ABSSpeakerSoundInstance> activeSources = new HashMap<>();
     private final Map<BlockPos, DownloadOperation> downloads = new HashMap<>();
+    private final ConcurrentHashMap<UUID, DownloadOperation> transfers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ReentrantLock> hashLocks = new ConcurrentHashMap<>();
     private final ExecutorService downloadExecutor = Executors.newFixedThreadPool(2, new AudioDownloadThreadFactory());
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .executor(downloadExecutor)
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build();
     private volatile ClientAudioCache diskCache;
     private volatile boolean diskCacheInitializationAttempted;
 
@@ -53,15 +49,15 @@ public final class SpeakerAudioManager {
 
     public void play(BlockPos pos, UUID token, String contentHash) {
         stopDownload(pos);
-        String url = audioUrl(token);
         String verifiedHash = ClientAudioCache.isValidHash(contentHash) ? contentHash : "";
-        DownloadOperation operation = new DownloadOperation();
+        DownloadOperation operation = new DownloadOperation(token);
         downloads.put(pos, operation);
+        transfers.put(token, operation);
         operation.setTask(downloadExecutor.submit(() -> {
             byte[] bytes = null;
             Throwable error = null;
             try {
-                bytes = loadAudio(url, verifiedHash);
+                bytes = loadAudio(token, verifiedHash, operation);
             } catch (Exception e) {
                 error = e;
             }
@@ -69,12 +65,14 @@ public final class SpeakerAudioManager {
             Throwable completedError = error;
             Minecraft.getInstance().execute(() -> {
                     if (downloads.get(pos) != operation) {
+                        transfers.remove(token, operation);
                         return;
                     }
                     downloads.remove(pos);
+                    transfers.remove(token, operation);
                     if (completedError != null) {
                         if (!operation.isCancelled()) {
-                            AudioBoundsSystem.LOGGER.error("ABS: failed to fetch speaker audio from {}", url, completedError);
+                            AudioBoundsSystem.LOGGER.error("ABS: failed to receive speaker audio", completedError);
                         }
                         return;
                     }
@@ -98,6 +96,28 @@ public final class SpeakerAudioManager {
                     AudioBoundsSystem.LOGGER.debug("ABS [DIAG] play: SoundManager.play returned");
                 });
         }));
+    }
+
+    public void acceptTransferChunk(UUID token, int totalLength, int offset, byte[] chunk) {
+        DownloadOperation operation = transfers.get(token);
+        if (operation == null) return;
+        try {
+            byte[] complete = operation.assembler.accept(totalLength, offset, chunk);
+            if (complete != null) {
+                transfers.remove(token, operation);
+                operation.complete(complete);
+            }
+        } catch (IOException e) {
+            transfers.remove(token, operation);
+            operation.fail(e);
+        }
+    }
+
+    public void failTransfer(UUID token, String message) {
+        DownloadOperation operation = transfers.get(token);
+        if (operation != null && transfers.remove(token, operation)) {
+            operation.fail(new IOException(message));
+        }
     }
 
     public void stop(BlockPos pos) {
@@ -136,47 +156,32 @@ public final class SpeakerAudioManager {
             operation.cancel();
         }
         downloads.clear();
+        transfers.clear();
         new ArrayList<>(activeSources.keySet()).forEach(this::stop);
     }
 
-    private byte[] fetchAudio(String url) {
+    private byte[] requestAudio(UUID token, DownloadOperation operation) throws IOException, InterruptedException {
+        Minecraft.getInstance().execute(() -> {
+            if (operation.isCancelled()) return;
+            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+            buf.writeUUID(token);
+            NetworkManager.sendToServer(ABSNetwork.REQUEST_AUDIO_TRANSFER, buf);
+        });
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(REQUEST_TIMEOUT)
-                    .GET()
-                    .build();
-            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            if (response.statusCode() != 200) {
-                AudioBoundsSystem.LOGGER.warn("ABS: audio request failed: {} {}", response.statusCode(), url);
-                response.body().close();
-                return null;
-            }
-            long declaredLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
-            if (declaredLength > MAX_AUDIO_BYTES) {
-                response.body().close();
-                AudioBoundsSystem.LOGGER.warn("ABS: audio response is too large: {} bytes", declaredLength);
-                return null;
-            }
-            try (InputStream body = response.body()) {
-                byte[] bytes = body.readNBytes(MAX_AUDIO_BYTES + 1);
-                if (bytes.length > MAX_AUDIO_BYTES) {
-                    AudioBoundsSystem.LOGGER.warn("ABS: audio response exceeded {} bytes", MAX_AUDIO_BYTES);
-                    return null;
-                }
-                return bytes;
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Audio download interrupted: " + url, e);
-        } catch (Exception e) {
-            throw new IllegalStateException("Audio download failed: " + url, e);
+            return operation.result.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException io) throw io;
+            throw new IOException("Audio transfer failed", cause);
+        } catch (TimeoutException e) {
+            throw new IOException("Audio transfer timed out", e);
         }
     }
 
-    private byte[] loadAudio(String url, String contentHash) throws IOException, InterruptedException {
+    private byte[] loadAudio(UUID token, String contentHash, DownloadOperation operation)
+            throws IOException, InterruptedException {
         if (contentHash.isEmpty()) {
-            byte[] downloaded = fetchAudio(url);
+            byte[] downloaded = requestAudio(token, operation);
             if (downloaded != null) AudioContent.requireOgg(downloaded);
             return downloaded;
         }
@@ -193,7 +198,7 @@ public final class SpeakerAudioManager {
                 }
             }
 
-            byte[] downloaded = fetchAudio(url);
+            byte[] downloaded = requestAudio(token, operation);
             if (downloaded == null) return null;
             AudioContent.requireOgg(downloaded);
             if (!contentHash.equals(AudioContent.sha256(downloaded))) {
@@ -238,26 +243,9 @@ public final class SpeakerAudioManager {
     private void stopDownload(BlockPos pos) {
         DownloadOperation operation = downloads.remove(pos);
         if (operation != null) {
+            transfers.remove(operation.token, operation);
             operation.cancel();
         }
-    }
-
-    private String audioUrl(UUID token) {
-        SocketAddress remote = null;
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.getConnection() != null) {
-            remote = minecraft.getConnection().getConnection().getRemoteAddress();
-        }
-        return audioUrl(token, remote);
-    }
-
-    static String audioUrl(UUID token, SocketAddress remote) {
-        String host = remote instanceof InetSocketAddress inet && inet.getHostString() != null
-                ? inet.getHostString() : "localhost";
-        if (host.indexOf(':') >= 0 && !host.startsWith("[")) {
-            host = "[" + host + "]";
-        }
-        return "http://" + host + ":" + ABSHttpServer.DEFAULT_PORT + "/audio/" + token;
     }
 
     private static final class AudioDownloadThreadFactory implements java.util.concurrent.ThreadFactory {
@@ -272,8 +260,16 @@ public final class SpeakerAudioManager {
     }
 
     private static final class DownloadOperation {
+        private final ChunkedTransferAssembler assembler =
+                new ChunkedTransferAssembler(AudioTransferService.MAX_AUDIO_BYTES);
+        private final CompletableFuture<byte[]> result = new CompletableFuture<>();
+        private final UUID token;
         private volatile Future<?> task;
         private volatile boolean cancelled;
+
+        private DownloadOperation(UUID token) {
+            this.token = token;
+        }
 
         private void setTask(Future<?> task) {
             this.task = task;
@@ -284,6 +280,7 @@ public final class SpeakerAudioManager {
 
         private void cancel() {
             cancelled = true;
+            result.cancel(true);
             Future<?> runningTask = task;
             if (runningTask != null) {
                 runningTask.cancel(true);
@@ -292,6 +289,14 @@ public final class SpeakerAudioManager {
 
         private boolean isCancelled() {
             return cancelled;
+        }
+
+        private void complete(byte[] bytes) {
+            result.complete(bytes);
+        }
+
+        private void fail(Throwable error) {
+            result.completeExceptionally(error);
         }
     }
 }

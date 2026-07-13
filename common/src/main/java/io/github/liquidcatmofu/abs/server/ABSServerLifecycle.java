@@ -15,17 +15,19 @@ public class ABSServerLifecycle {
         LifecycleEvent.SERVER_STARTING.register(server -> {
             ABSLibrary.init(server.getWorldPath(LevelResource.ROOT));
             FfmpegSupport.runStartupCheck();
+            AudioTransferService.start();
             try {
                 ABSHttpServer.start(server);
-                LibraryCacheMaintenance.start();
             } catch (IOException e) {
                 AudioBoundsSystem.LOGGER.error("Failed to start ABS HTTP Server", e);
             }
+            LibraryCacheMaintenance.start();
         });
 
         LifecycleEvent.SERVER_STOPPING.register(server -> {
             LibraryCacheMaintenance.stop();
             ABSHttpServer.stop();
+            AudioTransferService.stop();
             FfmpegSupport.stop();
             WebSessionStore.clear();
         });

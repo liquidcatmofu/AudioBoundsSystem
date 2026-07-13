@@ -119,7 +119,7 @@ These tests may require a dedicated test source set or GameTest and must not mak
 - Fabric runtime launch
 - VOICEVOX/compatible provider call
 - ffmpeg integration test
-- Remote client audio download
+- Remote client Minecraft audio transfer
 - Sound Physics Remastered compatibility
 
 ## Transcoder consolidation
@@ -196,7 +196,7 @@ BUILD SUCCESSFUL in 28s
 
 Manual tests still required:
 
-- Confirm the second playback of a new hash performs no HTTP audio transfer.
+- Confirm the second playback of a new hash performs no Minecraft audio transfer.
 - Start the same hash on multiple speakers concurrently and verify one download and independent playback.
 - Fill beyond 128 MiB with real Ogg files and inspect oldest-access eviction.
 - Verify behavior when the server deletes an entry that remains in the client LRU.
@@ -288,3 +288,30 @@ BUILD SUCCESSFUL in 3s
 ```
 
 Thirty-seven tests now pass across the project: 22 in `common` and 15 in `tts-addon`.
+
+## Persistent engine URLs
+
+The generated `config/abs-tts.toml` now includes validated base URLs under `[engines]` for VOICEVOX, COEIROINK, AivisSpeech, Sharevox and LMROID. Tests cover a custom HTTP URL with a base path, trailing-slash normalization, default generation, and fallback from malformed or unsafe URL forms.
+
+```text
+rtk ./gradlew :tts-addon:test
+BUILD SUCCESSFUL in 8s
+```
+
+Thirty-eight tests now pass across the project: 22 in `common` and 16 in `tts-addon`. Runtime verification with a non-default Provider URL remains open.
+
+## Minecraft audio transfer foundation
+
+CC:Tweaked's 1.20.x upload protocol was reviewed as a design reference. ABS uses the same conservative 30 KiB packet scale and the general pattern of transfer identity, declared size, ordered offsets and final digest validation; no CC:Tweaked source was copied into the implementation.
+
+The public `/audio` HTTP route has been removed. A cache miss now redeems its per-player one-time token over a C2S packet, and the server returns bounded Ogg chunks from an owned scheduled executor. Transfers are limited to two globally and paced in eight-chunk batches. Four pure-Java assembler tests cover exact-limit completion plus rejection of oversized, out-of-order, overflowing and length-changing transfers.
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 5s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 13s
+```
+
+Thirty-nine tests now pass across the project: 23 in `common` and 16 in `tts-addon`. Actual two-client playback and disconnect-during-transfer remain manual acceptance tests.

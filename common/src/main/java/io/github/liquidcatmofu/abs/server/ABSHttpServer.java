@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.UUID;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,7 +37,6 @@ public class ABSHttpServer {
         HttpServer newServer = HttpServer.create(new InetSocketAddress(DEFAULT_PORT), 0);
         ExecutorService newExecutor = Executors.newFixedThreadPool(8, new AbsHttpThreadFactory());
         try {
-            newServer.createContext("/audio",       new AudioRequestHandler());
             newServer.createContext("/api/auth",    new AuthApiHandler());
             newServer.createContext("/api/me",      new MeApiHandler(mcServer));
             newServer.createContext("/api/tts",     new TtsApiHandler());
@@ -82,11 +80,6 @@ public class ABSHttpServer {
         if (runningServer != null || runningExecutor != null) {
             AudioBoundsSystem.LOGGER.info("ABS HTTP Server stopped");
         }
-    }
-
-    /** Ogg ファイルに対するワンタイムトークンを発行する */
-    public static UUID generateToken(Path oggFile) {
-        return TokenStore.generate(oggFile);
     }
 
     /** 音声キャッシュディレクトリを返す（TTS 統合フェーズで使用） */

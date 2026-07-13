@@ -6,6 +6,7 @@ import io.github.liquidcatmofu.abs.blockentity.SpeakerBlockEntity;
 import io.github.liquidcatmofu.abs.client.ClientPacketHandler;
 import io.github.liquidcatmofu.abs.client.LibraryEntryInfo;
 import io.github.liquidcatmofu.abs.client.LibraryFolderInfo;
+import io.github.liquidcatmofu.abs.client.audio.SpeakerAudioManager;
 import io.github.liquidcatmofu.abs.config.AudioControllerTomlConfig;
 import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
@@ -23,6 +24,7 @@ import io.github.liquidcatmofu.abs.library.LibrarySequence;
 import io.github.liquidcatmofu.abs.library.LibraryTts;
 import io.github.liquidcatmofu.abs.library.SequenceEntry;
 import io.github.liquidcatmofu.abs.library.TtsEntry;
+import io.github.liquidcatmofu.abs.server.AudioTransferService;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -47,6 +49,9 @@ public final class ABSNetwork {
     private static final double MAX_CONFIG_DISTANCE_SQR = 64.0;
     public static final ResourceLocation PLAY_AUDIO = new ResourceLocation("abs", "play_audio");
     public static final ResourceLocation STOP_AUDIO = new ResourceLocation("abs", "stop_audio");
+    public static final ResourceLocation REQUEST_AUDIO_TRANSFER = new ResourceLocation("abs", "request_audio_transfer");
+    public static final ResourceLocation AUDIO_TRANSFER_CHUNK = new ResourceLocation("abs", "audio_transfer_chunk");
+    public static final ResourceLocation AUDIO_TRANSFER_ERROR = new ResourceLocation("abs", "audio_transfer_error");
     public static final ResourceLocation SAVE_SPEAKER_CONFIG = new ResourceLocation("abs", "save_speaker_config");
     public static final ResourceLocation SAVE_AUDIO_CONTROLLER_CONFIG =
             new ResourceLocation("abs", "save_audio_controller_config");
@@ -64,6 +69,15 @@ public final class ABSNetwork {
     private ABSNetwork() {}
 
     public static void registerServerHandlers() {
+        NetworkManager.registerReceiver(NetworkManager.Side.C2S, REQUEST_AUDIO_TRANSFER, (buf, ctx) -> {
+            UUID token = buf.readUUID();
+            ctx.queue(() -> {
+                if (ctx.getPlayer() instanceof ServerPlayer player) {
+                    AudioTransferService.request(player, token);
+                }
+            });
+        });
+
         NetworkManager.registerReceiver(NetworkManager.Side.C2S, SAVE_SPEAKER_CONFIG, (buf, ctx) -> {
             BlockPos pos = buf.readBlockPos();
             BoundsShape shape = buf.readEnum(BoundsShape.class);
@@ -253,6 +267,21 @@ public final class ABSNetwork {
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, STOP_AUDIO, (buf, ctx) -> {
             BlockPos pos = buf.readBlockPos();
             ctx.queue(() -> ClientPacketHandler.onStopAudio(pos));
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, AUDIO_TRANSFER_CHUNK, (buf, ctx) -> {
+            UUID token = buf.readUUID();
+            int totalLength = buf.readVarInt();
+            int offset = buf.readVarInt();
+            byte[] chunk = buf.readByteArray(AudioTransferService.MAX_CHUNK_BYTES);
+            ctx.queue(() -> SpeakerAudioManager.INSTANCE.acceptTransferChunk(
+                    token, totalLength, offset, chunk));
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, AUDIO_TRANSFER_ERROR, (buf, ctx) -> {
+            UUID token = buf.readUUID();
+            String message = buf.readUtf(128);
+            ctx.queue(() -> SpeakerAudioManager.INSTANCE.failTransfer(token, message));
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, LIBRARY_FOLDERS_RESPONSE, (buf, ctx) -> {

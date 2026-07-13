@@ -20,16 +20,20 @@ public final class TTSAddon {
     public static void init() {
         TTSConfig.load(Platform.getConfigFolder().resolve("abs-tts.toml"));
         // VOICEVOX 互換 API を持つエンジンを一括登録（起動中のもののみ UI に表示される）
-        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("voicevox",    "VOICEVOX",        "http://127.0.0.1:50021"));
-        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("coeiroink",   "COEIROINK",       "http://127.0.0.1:50032"));
-        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("aivisspeech", "AivisSpeech",     "http://127.0.0.1:10101"));
-        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("sharevox",    "Sharevox",        "http://127.0.0.1:50025"));
-        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("lmroid",      "LMROID",          "http://127.0.0.1:49513"));
+        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("voicevox",    "VOICEVOX",        defaultUrl("voicevox")));
+        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("coeiroink",   "COEIROINK",       defaultUrl("coeiroink")));
+        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("aivisspeech", "AivisSpeech",     defaultUrl("aivisspeech")));
+        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("sharevox",    "Sharevox",        defaultUrl("sharevox")));
+        TTSProviderRegistry.register(new VoiceVoxCompatibleProvider("lmroid",      "LMROID",          defaultUrl("lmroid")));
         TTSBridgeRegistry.set(new AddonTTSBridge());
 
         LifecycleEvent.SERVER_STARTING.register(server -> TTSAudioCache.init(
                 server.getWorldPath(LevelResource.ROOT), TTSConfig.get().cacheMaxBytes()));
         TTSAddonCommand.register();
         LOGGER.info("ABS TTS Addon initialized");
+    }
+
+    private static String defaultUrl(String engineId) {
+        return TTSConfig.DEFAULT_ENGINE_URLS.get(engineId);
     }
 }

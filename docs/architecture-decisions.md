@@ -64,7 +64,7 @@ Status: Accepted
 
 New play packets include the Ogg SHA-256. The client uses that hash as both the disk filename and dynamic resource identity. It checks and touches a verified disk entry before HTTP download, validates every downloaded Ogg header and SHA-256, and atomically commits successful downloads. Cache writes and startup enforce a 128 MiB limit by deleting the oldest last-accessed files first.
 
-Concurrent requests for the same hash are serialized inside one client, so only the first performs HTTP transfer and followers reuse the committed file. Dynamic sound bytes are removed only after the last active speaker using that hash stops. Cache files are shared safely across servers because their identity is the content hash.
+Concurrent requests for the same hash are serialized inside one client, so only the first performs a Minecraft transfer and followers reuse the committed file. Dynamic sound bytes are removed only after the last active speaker using that hash stops. Cache files are shared safely across servers because their identity is the content hash.
 
 Server-driven invalidation is deferred: deleted server content naturally ages out through LRU. Pre-release metadata without `contentHash` can still use the fallback download path, but no automatic migration is maintained before the first release.
 
@@ -101,6 +101,22 @@ Status: Accepted
 The Core TTS endpoint requests both addon availability and engine metadata. Provider availability probes are cached for five seconds, and the assembled engine/speaker list is cached for the same interval. This removes duplicate probes within one API response and coalesces concurrent or rapidly repeated dashboard requests under one bridge-level lock.
 
 An expired availability probe invalidates the assembled engine list, so `available` and `engines` do not disagree when an engine starts or stops. The operator command `/abstts check` continues to call the active Provider directly and therefore remains an explicit live check.
+
+## ADR-015: Known engine base URLs are validated startup configuration
+
+Status: Accepted
+
+`config/abs-tts.toml` contains an `[engines]` entry for each built-in VOICEVOX-compatible Provider. Values must be absolute HTTP or HTTPS URLs with a host, a valid non-zero port when present, and no user information, query or fragment. A trailing slash is removed so endpoint paths can be appended consistently. Invalid values are replaced with the built-in local default and the normalized value is saved.
+
+Configuration remains startup-only. This avoids changing Provider targets while discovery or synthesis is in flight. Remote URLs are an explicit operator choice and may receive the complete synthesis text, so WebUI editing and live reload are deferred until their authorization and lifecycle behavior is defined.
+
+## ADR-016: Minecraft transport is the default for audio and future WebUI RPC
+
+Status: Accepted
+
+ABS must not require an additional publicly reachable TCP port for its default multiplayer setup. A play packet still carries a per-player one-time token and content hash, but a cache miss now redeems that token through a C2S custom payload. The server reads a bounded Ogg off-thread and returns ordered chunks of at most 30 KiB. The client rejects oversized, inconsistent, out-of-order or overflowing transfers, then applies the existing Ogg and SHA-256 validation before committing its disk cache.
+
+The chunk shape follows the proven CC:Tweaked upload design—transfer identity, declared total size, offset-bounded slices and final digest validation—but the implementation is original and specialized for ABS. At most two audio transfers run concurrently, with no player allowed to occupy more than those two slots. Chunks are emitted in eight-packet batches every 50 ms (about 4.8 MiB/s per transfer) instead of filling the network queue in one burst. The public `/audio` HTTP route is removed; the remaining server HTTP service is temporary until WebUI/API traffic is moved to a loopback client bridge over Minecraft RPC.
 
 ## Open decisions
 

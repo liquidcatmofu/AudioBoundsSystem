@@ -11,7 +11,7 @@ import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
 import io.github.liquidcatmofu.abs.library.LibraryRef;
-import io.github.liquidcatmofu.abs.server.ABSHttpServer;
+import io.github.liquidcatmofu.abs.server.AudioTransferService;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -179,8 +179,8 @@ public class SpeakerBlockEntity extends BlockEntity {
             AudioBoundsSystem.LOGGER.warn("ABS: audioFile not configured for SpeakerBlock at {}", worldPosition);
             return;
         }
-        if (!ABSHttpServer.isRunning()) {
-            AudioBoundsSystem.LOGGER.warn("ABS: HTTP server is not running");
+        if (!AudioTransferService.isRunning()) {
+            AudioBoundsSystem.LOGGER.warn("ABS: audio transfer service is not running");
             return;
         }
 
@@ -208,7 +208,7 @@ public class SpeakerBlockEntity extends BlockEntity {
         for (ServerPlayer player : level.players()) {
             if (player.distanceToSqr(center) <= maxRange * maxRange) {
                 // プレイヤーごとに個別トークンを発行（トークンは単発使用）
-                UUID token = ABSHttpServer.generateToken(path);
+                UUID token = AudioTransferService.generateToken(path);
                 FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
                 buf.writeBlockPos(worldPosition);
                 buf.writeLong(token.getMostSignificantBits());
