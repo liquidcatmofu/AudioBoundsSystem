@@ -8,4 +8,12 @@ dependencies {
 
     // ABS 本体（common）のブリッジ API を参照。実行時は abs 本体が提供するため compileOnly。
     compileOnly project(path: ':common', configuration: 'namedElements')
+
+    testImplementation project(path: ':common', configuration: 'namedElements')
+    testImplementation platform("org.junit:junit-bom:5.10.3")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+}
+
+test {
+    useJUnitPlatform()
 }

@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Map;
+import java.util.TreeMap;
 
 public final class TTSAudioCache {
     private static Path cacheDir;
@@ -37,6 +39,50 @@ public final class TTSAudioCache {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * 合成結果を一意に表す完全なキャッシュキーを返す。
+     * パラメータはキー名でソートするため、Map の反復順序には依存しない。
+     *
+     * <p>既存の {@link #computeKey(String, String)} はコマンド側キャッシュとの
+     * 互換性維持のため変更せず、新規統合ではこの形式を使用する。</p>
+     */
+    public static String computeKey(String engineId, String speakerId, String text,
+                                    Map<String, Double> params) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateField(digest, engineId);
+            updateField(digest, speakerId);
+            updateField(digest, text);
+            if (params != null) {
+                for (Map.Entry<String, Double> entry : new TreeMap<>(params).entrySet()) {
+                    updateField(digest, entry.getKey());
+                    updateField(digest, entry.getValue() == null
+                            ? "null" : Double.toHexString(entry.getValue()));
+                }
+            }
+            return toHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private static void updateField(MessageDigest digest, String value) {
+        byte[] bytes = (value == null ? "" : value).getBytes(StandardCharsets.UTF_8);
+        digest.update((byte) (bytes.length >>> 24));
+        digest.update((byte) (bytes.length >>> 16));
+        digest.update((byte) (bytes.length >>> 8));
+        digest.update((byte) bytes.length);
+        digest.update(bytes);
+    }
+
+    private static String toHex(byte[] hash) {
+        StringBuilder hex = new StringBuilder(hash.length * 2);
+        for (byte b : hash) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
     }
 
     /** キャッシュファイルの絶対パスを返す。 */
