@@ -24,7 +24,7 @@ public class WebUIHandler implements HttpHandler {
             return;
         }
 
-        // セッション未認証でも /ui 自体は返す（JS 側でリダイレクト）
+        // 認証はクライアントのループバックハンドラーがこの処理の前に行う。
         String path = exchange.getRequestURI().getPath();
 
         // /ui → /ui/index.html

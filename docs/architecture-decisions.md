@@ -126,7 +126,7 @@ The dedicated server no longer starts an HTTP listener. `/abs ui` sends an authe
 
 Browser API requests are split into 30 KiB Minecraft payloads with a request UUID, declared total length, ordered offsets and SHA-256. The server derives the player identity from the Minecraft connection, injects a short-lived internal Web session, and dispatches through the same `WebApiRouter` used by the former HTTP transport. Responses, including Ogg previews, use the same bounded and paced mechanism. Four assembling requests per player and a 120-second timeout bound abandoned work.
 
-The legacy `ABSHttpServer` implementation remains source-compatible for now but is not started by the lifecycle. Large uploads are initially assembled in bounded memory like the reviewed CC:Tweaked design; temporary-file streaming is the next hardening step.
+The pre-release `ABSHttpServer` and browser bootstrap-auth endpoint are removed so a future lifecycle change cannot accidentally restore a public listener. Large uploads are initially assembled in bounded memory like the reviewed CC:Tweaked design; temporary-file streaming is the next hardening step.
 
 ## Open decisions
 

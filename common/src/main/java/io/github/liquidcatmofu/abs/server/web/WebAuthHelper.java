@@ -33,13 +33,6 @@ public final class WebAuthHelper {
         return Optional.empty();
     }
 
-    /** セッション Cookie を設定する（8h）*/
-    public static void setSessionCookie(HttpExchange exchange, UUID sessionToken) {
-        String cookie = SESSION_COOKIE + "=" + sessionToken
-                + "; HttpOnly; Path=/; Max-Age=28800; SameSite=Strict";
-        exchange.getResponseHeaders().set("Set-Cookie", cookie);
-    }
-
     /** 更新系APIでは、ブラウザがクロスサイトフォームから付与できない専用ヘッダーを要求する。 */
     public static boolean validateMutationHeader(HttpExchange exchange) throws IOException {
         if (isMutationHeaderValid(exchange.getRequestMethod(),
@@ -71,12 +64,6 @@ public final class WebAuthHelper {
     /** エラー JSON を送信する */
     public static void sendError(HttpExchange exchange, int status, String message) throws IOException {
         sendJson(exchange, status, "{\"error\":\"" + escape(message) + "\"}");
-    }
-
-    /** リダイレクト */
-    public static void sendRedirect(HttpExchange exchange, String location) throws IOException {
-        exchange.getResponseHeaders().set("Location", location);
-        exchange.sendResponseHeaders(302, -1);
     }
 
     private static String escape(String s) {

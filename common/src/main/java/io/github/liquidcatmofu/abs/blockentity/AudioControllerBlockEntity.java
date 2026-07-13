@@ -9,7 +9,7 @@ import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.library.LibraryRef;
 import io.github.liquidcatmofu.abs.library.LibrarySequence;
 import io.github.liquidcatmofu.abs.library.SequenceStep;
-import io.github.liquidcatmofu.abs.server.ABSHttpServer;
+import io.github.liquidcatmofu.abs.server.AudioTransferService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -228,7 +228,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
     }
 
     private int playTrackOnTargets(ServerLevel level, String audioFile) {
-        if (!ABSHttpServer.isRunning()) {
+        if (!AudioTransferService.isRunning()) {
             return -1;
         }
 
