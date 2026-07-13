@@ -2,16 +2,13 @@ package io.github.liquidcatmofu.abs.client.audio;
 
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.io.AtomicFiles;
+import io.github.liquidcatmofu.abs.io.DiskCachePruner;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 /** SHA-256をキーにした、アクセス時刻ベースのクライアントOggディスクキャッシュ。 */
 public final class ClientAudioCache {
@@ -77,21 +74,7 @@ public final class ClientAudioCache {
     }
 
     synchronized void evictIfNeeded() throws IOException {
-        List<CacheFile> files = new ArrayList<>();
-        try (Stream<Path> stream = Files.list(directory)) {
-            for (Path path : stream.filter(Files::isRegularFile)
-                    .filter(candidate -> candidate.getFileName().toString().endsWith(".ogg")).toList()) {
-                files.add(new CacheFile(path, Files.size(path), Files.getLastModifiedTime(path).toMillis()));
-            }
-        }
-        long total = files.stream().mapToLong(CacheFile::size).sum();
-        files.sort(Comparator.comparingLong(CacheFile::lastAccess));
-        for (CacheFile file : files) {
-            if (total <= maxBytes) break;
-            if (Files.deleteIfExists(file.path())) {
-                total -= file.size();
-            }
-        }
+        DiskCachePruner.evictOldest(directory, ".ogg", maxBytes);
     }
 
     public static boolean isValidHash(String contentHash) {
@@ -102,5 +85,4 @@ public final class ClientAudioCache {
         return directory.resolve(contentHash + ".ogg");
     }
 
-    private record CacheFile(Path path, long size, long lastAccess) {}
 }

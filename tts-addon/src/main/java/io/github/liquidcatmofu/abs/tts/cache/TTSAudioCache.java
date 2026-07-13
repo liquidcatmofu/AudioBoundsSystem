@@ -3,11 +3,13 @@ package io.github.liquidcatmofu.abs.tts.cache;
 import io.github.liquidcatmofu.abs.tts.TTSAddon;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.io.AtomicFiles;
+import io.github.liquidcatmofu.abs.io.DiskCachePruner;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
@@ -15,15 +17,24 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 public final class TTSAudioCache {
+    public static final long DEFAULT_MAX_BYTES = 128L * 1024L * 1024L;
     private static final long MAX_CACHE_FILE_BYTES = 64L * 1024L * 1024L;
     private static Path cacheDir;
+    private static long maxBytes = DEFAULT_MAX_BYTES;
 
     private TTSAudioCache() {}
 
-    public static void init(Path serverDir) {
+    public static synchronized void init(Path serverDir) {
+        init(serverDir, DEFAULT_MAX_BYTES);
+    }
+
+    public static synchronized void init(Path serverDir, long maximumBytes) {
+        if (maximumBytes < 1) throw new IllegalArgumentException("maximumBytes must be positive");
         cacheDir = serverDir.resolve("abs_cache").resolve("tts");
+        maxBytes = maximumBytes;
         try {
             Files.createDirectories(cacheDir);
+            evictIfNeeded();
             TTSAddon.LOGGER.info("ABS TTS: cache dir ready at {}", cacheDir);
         } catch (IOException e) {
             TTSAddon.LOGGER.error("ABS TTS: failed to create TTS cache dir", e);
@@ -97,8 +108,8 @@ public final class TTSAudioCache {
         return cacheDir != null && Files.exists(resolve(speakerId, text));
     }
 
-    public static Optional<byte[]> load(String engineId, String speakerId, String text,
-                                        Map<String, Double> params) {
+    public static synchronized Optional<byte[]> load(String engineId, String speakerId, String text,
+                                                     Map<String, Double> params) {
         if (cacheDir == null) return Optional.empty();
         Path path = resolve(engineId, speakerId, text, params);
         try {
@@ -111,18 +122,23 @@ public final class TTSAudioCache {
                 Files.deleteIfExists(path);
                 return Optional.empty();
             }
-            return Optional.of(Files.readAllBytes(path));
+            byte[] bytes = Files.readAllBytes(path);
+            Files.setLastModifiedTime(path, FileTime.fromMillis(System.currentTimeMillis()));
+            return Optional.of(bytes);
         } catch (IOException | RuntimeException e) {
             TTSAddon.LOGGER.warn("ABS TTS: failed to read synthesis cache {}", path, e);
             return Optional.empty();
         }
     }
 
-    public static void save(String engineId, String speakerId, String text,
-                            Map<String, Double> params, byte[] oggBytes) throws IOException {
+    public static synchronized void save(String engineId, String speakerId, String text,
+                                         Map<String, Double> params, byte[] oggBytes) throws IOException {
         if (cacheDir == null) return;
-        AudioContent.requireOgg(oggBytes);
-        AtomicFiles.write(resolve(engineId, speakerId, text, params), oggBytes);
+        requireCacheable(oggBytes);
+        Path path = resolve(engineId, speakerId, text, params);
+        AtomicFiles.write(path, oggBytes);
+        Files.setLastModifiedTime(path, FileTime.fromMillis(System.currentTimeMillis()));
+        evictIfNeeded();
     }
 
     private static Path resolve(String engineId, String speakerId, String text,
@@ -133,14 +149,27 @@ public final class TTSAudioCache {
     /**
      * Ogg バイト列をキャッシュに保存し、abs_cache/ からの相対パス（例: "tts/abc123.ogg"）を返す。
      */
-    public static String save(byte[] oggBytes, String speakerId, String text) throws IOException {
+    public static synchronized String save(byte[] oggBytes, String speakerId, String text) throws IOException {
         if (cacheDir == null) {
             throw new IllegalStateException("TTSAudioCache not initialized");
         }
         Path path = resolve(speakerId, text);
-        AudioContent.requireOgg(oggBytes);
+        requireCacheable(oggBytes);
         AtomicFiles.write(path, oggBytes);
+        Files.setLastModifiedTime(path, FileTime.fromMillis(System.currentTimeMillis()));
+        evictIfNeeded();
         return "tts/" + path.getFileName().toString();
+    }
+
+    private static void requireCacheable(byte[] oggBytes) throws IOException {
+        if (oggBytes == null || oggBytes.length > MAX_CACHE_FILE_BYTES) {
+            throw new IOException("TTS audio exceeds cache file limit");
+        }
+        AudioContent.requireOgg(oggBytes);
+    }
+
+    private static void evictIfNeeded() throws IOException {
+        DiskCachePruner.evictOldest(cacheDir, ".ogg", maxBytes);
     }
 
     public static Path getCacheDir() {

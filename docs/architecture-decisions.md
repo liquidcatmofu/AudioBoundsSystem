@@ -84,6 +84,8 @@ The TTS addon owns Provider-specific synthesis, so it also owns the pre-synthesi
 
 Requests mapping to the same key are serialized through a fixed set of locks. This prevents duplicate Provider and FFmpeg work without changing the synchronous Core bridge contract. Core still owns library registration and its content-addressed playback copy.
 
+The pre-synthesis cache defaults to 128 MiB. `config/abs-tts.toml` can change `cache.maxSizeMiB` from 1 MiB through 1 TiB, with changes applied on the next game start. Successful reads update the file modification time as the last-access marker; startup and each write remove the oldest root-level Ogg files until the cache is within capacity. The eviction implementation is shared with the client audio cache through a Core utility.
+
 ## Open decisions
 
 ### TOML authority

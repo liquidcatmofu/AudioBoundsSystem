@@ -12,7 +12,7 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 
 - Target: Minecraft 1.20.1, Architectury 9.2.14, Forge 47.4.10, Fabric Loader 0.19.3.
 - Source and target compatibility: Java 17.
-- Audit host JDK: Temurin 25.0.3. A Java 17 runtime build remains to be run.
+- Initial audit host JDK: Temurin 25.0.3. The release-gate build now also passes on Microsoft OpenJDK 17.0.19.
 - Modules: `common`, `fabric`, `forge`, `tts-addon`, `tts-addon-fabric`, `tts-addon-forge`.
 - `./gradlew build` succeeded on 2026-07-13 for all six modules.
 - Ordinary unit tests now run in `common` and `tts-addon`; no CI workflow is present.
@@ -37,17 +37,18 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 | Playback sequence | Implemented but untested | Sequence metadata and controller expansion are present | `LibrarySequence`, `AudioControllerBlockEntity` | No automated queue/retrigger tests | Extract pure queue planning logic for tests |
 | Subtitle HUD | Partial | A single title/subtitle overlay is rendered | `SubtitleOverlayManager`, `SubtitleHudRenderer` | Not a timed `SubtitleTrack`; packet duration is fixed at 100 ticks | Test existing overlay, then define a compatible timed-track extension |
 | Speaker/controller TOML | Partial | Comment-preserving save/load helpers exist | `SpeakerTomlConfig`, `AudioControllerTomlConfig` | Load helpers have no callers; NBT is currently the effective restore path | Decide whether TOML is authoritative or export-only and test that decision |
-| TTS configuration | Stub | In-memory defaults and URL lookup exist | `TTSConfig` | No disk/WebUI integration; no validation | Preserve defaults and add a versioned config loader later |
-| TTS cache | Partial | The addon checks a deterministic full-request cache before Provider synthesis; validated Ogg writes are atomic and same-key requests are serialized | `AddonTTSBridge`, `TTSAudioCache`, `LibraryTts`, `AudioContent` | Cache has no capacity limit or synthesis-format version | Define eviction and cache-version policy |
+| TTS configuration | Partial | `config/abs-tts.toml` is generated and loads validated cache capacity plus FFmpeg path at startup | `TTSConfig`, `TTSAddon` | Engine URL overrides remain in-memory only; no live reload or WebUI editing | Add validated engine URL persistence when provider configuration is addressed |
+| TTS cache | Implemented but untested | The addon checks a deterministic full-request cache before Provider synthesis; validated atomic entries use a 128 MiB access-time LRU and same-key requests are serialized | `AddonTTSBridge`, `TTSAudioCache`, `DiskCachePruner` | Cache key has no explicit synthesis-format version | Verify eviction and cache hits with a real Provider; define version policy before changing output format |
 | Server lifecycle | Implemented but untested | HTTP, ffmpeg-probe and cache-maintenance executors are owned and stopped on server stopping | `ABSServerLifecycle`, `ABSHttpServer`, `FfmpegSupport`, `LibraryCacheMaintenance` | Requires runtime stop/restart verification; provider bridge has no shutdown hook | Add lifecycle integration tests |
 | Client lifecycle | Implemented but untested | Active sound/subtitle state and in-flight download tasks clear on player quit | `AudioBoundsSystemClient`, `SpeakerAudioManager` | Download executor lives for the client process, although its threads are daemon threads | Add disconnect-during-download integration test |
 | Authorization | Implemented but untested | Sessions, mutation header, folder mutation policy, speaker checks and controller owner/OP/distance checks exist | `WebSessionStore`, `WebAuthHelper`, `ABSLibrary`, `ABSNetwork` | Existing ownerless controllers are claimed on first save; Minecraft packet paths lack integration tests | Run owner/non-owner/OP multiplayer tests |
 | Error handling | Partial | Failures are caught at HTTP/provider boundaries | Multiple | Most errors collapse to HTTP 502 or null; diagnostic playback logs use WARN | Add typed failures and rate-limited/user-facing diagnostics |
-| Automated tests | Partial | 31 pure-Java bridge/cache/bounds/endpoint/request/security/integrity/client-cache/maintenance tests pass | Test sources under `common` and `tts-addon` | HTTP transfer, full registration, actual playback, lifecycle and loader paths remain uncovered | Continue stabilization regression coverage |
+| Automated tests | Partial | 34 pure-Java bridge/cache/bounds/endpoint/request/security/integrity/client-cache/maintenance/config tests pass | Test sources under `common` and `tts-addon` | HTTP transfer, full registration, actual playback, lifecycle and loader paths remain uncovered | Continue stabilization regression coverage |
 | CI | Missing | No `.github/workflows` files | — | Regressions are not automatically detected | Add after local tests are stable |
 
 ## Storage locations
 
+- TTS addon global config: `<game>/config/abs-tts.toml`
 - World library metadata: `<world>/abs_library/<folder-id>/...`
 - Core audio cache: `<world>/abs_cache/`
 - Command-side TTS cache: `<world>/abs_cache/tts/`

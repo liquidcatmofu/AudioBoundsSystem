@@ -75,9 +75,10 @@ BUILD SUCCESSFUL in 27s
 Environment:
 
 - Host: macOS
-- Host Java: Temurin 25.0.3
+- Initial audit Java: Temurin 25.0.3
+- Release-gate Java: Microsoft OpenJDK 17.0.19
 - Java release configured by Gradle: 17
-- Java 17 runtime build: not yet run
+- Java 17 runtime build: passed on 2026-07-13
 
 ## Automated test layers
 
@@ -113,7 +114,6 @@ These tests may require a dedicated test source set or GameTest and must not mak
 
 ## Not yet executed
 
-- Java 17 runtime build
 - Minecraft client launch
 - Forge dedicated-server launch
 - Fabric runtime launch
@@ -238,3 +238,31 @@ BUILD SUCCESSFUL in 31s
 rtk ./gradlew build
 BUILD SUCCESSFUL in 54s
 ```
+
+## Bounded TTS synthesis cache
+
+The TTS pre-synthesis cache now shares the Core oldest-accessed-file eviction utility with the client cache. Its production limit is 128 MiB. The new addon test uses a small temporary capacity and verifies that saving a newer result removes the older entry while retaining the new one.
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 21s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 36s
+```
+
+## Configurable TTS cache capacity and Java 17 gate
+
+The addon now creates `config/abs-tts.toml`. `cache.maxSizeMiB` defaults to 128, accepts values from 1 through 1,048,576, and falls back to 128 when invalid. The same file persists `ffmpeg.path`. Two configuration tests cover default generation, configured loading and invalid-value normalization.
+
+```text
+Java: Microsoft OpenJDK 17.0.19
+
+rtk ./gradlew test
+BUILD SUCCESSFUL in 3s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 15s
+```
+
+Forge development launch verification generated `forge/run/config/abs-tts.toml` and logged `ABS TTS: loaded config ... (cache 128 MiB)`. The prior launch had loaded a stale July 1 addon JAR from Loom's `remapped_mods` cache. Forge now loads addon source sets directly. Fabric Loader 0.19.3 did not recognize the multi-source-set group as a mod, so Fabric uses current named project artifacts as ordinary development runtime dependencies instead. A Fabric launch then recognized `abs_tts 1.0-SNAPSHOT`, generated `fabric/run/config/abs-tts.toml`, and logged the same 128 MiB configuration.

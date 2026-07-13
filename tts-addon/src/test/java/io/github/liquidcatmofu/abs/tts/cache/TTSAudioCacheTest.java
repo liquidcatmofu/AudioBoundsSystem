@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.nio.file.attribute.FileTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -65,5 +66,23 @@ class TTSAudioCacheTest {
         assertEquals(java.util.Optional.empty(),
                 TTSAudioCache.load("voicevox", "3", "hello", params));
         org.junit.jupiter.api.Assertions.assertFalse(Files.exists(cached));
+    }
+
+    @Test
+    void evictsLeastRecentlyUsedFilesBeyondTheCapacity() throws Exception {
+        byte[] first = "OggS-first".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] second = "OggS-second".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        TTSAudioCache.init(tempDir, second.length);
+
+        TTSAudioCache.save("voicevox", "3", "first", Map.of(), first);
+        Path firstPath = tempDir.resolve("abs_cache/tts")
+                .resolve(TTSAudioCache.computeKey("voicevox", "3", "first", Map.of()) + ".ogg");
+        Files.setLastModifiedTime(firstPath, FileTime.fromMillis(1));
+        TTSAudioCache.save("voicevox", "3", "second", Map.of(), second);
+
+        Path secondPath = tempDir.resolve("abs_cache/tts")
+                .resolve(TTSAudioCache.computeKey("voicevox", "3", "second", Map.of()) + ".ogg");
+        org.junit.jupiter.api.Assertions.assertFalse(Files.exists(firstPath));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(secondPath));
     }
 }
