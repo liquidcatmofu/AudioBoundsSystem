@@ -86,6 +86,14 @@ Requests mapping to the same key are serialized through a fixed set of locks. Th
 
 The pre-synthesis cache defaults to 128 MiB. `config/abs-tts.toml` can change `cache.maxSizeMiB` from 1 MiB through 1 TiB, with changes applied on the next game start. Successful reads update the file modification time as the last-access marker; startup and each write remove the oldest root-level Ogg files until the cache is within capacity. The eviction implementation is shared with the client audio cache through a Core utility.
 
+## ADR-013: Provider responses are bounded while streaming
+
+Status: Accepted
+
+VOICEVOX-compatible endpoints are local or operator-configured HTTP services, but their responses are still treated as untrusted input. Speaker and audio-query JSON responses are limited to 4 MiB, synthesis WAV responses to 64 MiB, and diagnostic error bodies to 16 KiB. Both a declared `Content-Length` over the limit and a chunked or incorrectly declared stream that crosses the limit are rejected.
+
+Every Provider connection is disconnected in a `finally` block. These fixed limits protect HTTP worker memory without changing the Provider interface; making them configurable is deferred until a real engine requires a different bound.
+
 ## Open decisions
 
 ### TOML authority

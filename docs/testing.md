@@ -266,3 +266,14 @@ BUILD SUCCESSFUL in 15s
 ```
 
 Forge development launch verification generated `forge/run/config/abs-tts.toml` and logged `ABS TTS: loaded config ... (cache 128 MiB)`. The prior launch had loaded a stale July 1 addon JAR from Loom's `remapped_mods` cache. Forge now loads addon source sets directly. Fabric Loader 0.19.3 did not recognize the multi-source-set group as a mod, so Fabric uses current named project artifacts as ordinary development runtime dependencies instead. A Fabric launch then recognized `abs_tts 1.0-SNAPSHOT`, generated `fabric/run/config/abs-tts.toml`, and logged the same 128 MiB configuration.
+
+## Bounded Provider responses
+
+VOICEVOX-compatible Provider reads now enforce 4 MiB JSON and 64 MiB WAV limits, and retain at most 16 KiB from an error response. Unit tests cover an exact-limit response, an oversized declared `Content-Length`, and an oversized stream without a usable declared length.
+
+```text
+rtk ./gradlew :tts-addon:test
+BUILD SUCCESSFUL in 3s
+```
+
+Thirty-six tests now pass across the project: 22 in `common` and 14 in `tts-addon`. A live HTTP fixture test for connection cleanup, non-200 diagnostics and chunked transfer remains open.

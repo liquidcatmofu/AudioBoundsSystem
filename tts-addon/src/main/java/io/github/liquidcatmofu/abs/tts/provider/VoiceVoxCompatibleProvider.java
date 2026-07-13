@@ -31,6 +31,9 @@ import java.util.Map;
  * ClosedChannelException を起こすため、同期的な HttpURLConnection を使用する。
  */
 public class VoiceVoxCompatibleProvider implements TTSProvider {
+    static final int MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024;
+    static final int MAX_WAV_RESPONSE_BYTES = 64 * 1024 * 1024;
+    private static final int MAX_ERROR_RESPONSE_BYTES = 16 * 1024;
 
     private static final String[] PARAM_KEYS = {
         "speedScale", "pitchScale", "intonationScale", "volumeScale",
@@ -58,25 +61,27 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
 
     @Override
     public boolean isAvailable() {
+        HttpURLConnection con = null;
         try {
-            HttpURLConnection con = open(baseUrl() + "/version", "GET", 500, 500);
-            int code = con.getResponseCode();
-            con.disconnect();
-            return code == 200;
+            con = open(baseUrl() + "/version", "GET", 500, 500);
+            return con.getResponseCode() == 200;
         } catch (Exception e) {
             TTSAddon.LOGGER.debug("ABS TTS: {} not available at {}: {}", id, baseUrl(), e.toString());
             return false;
+        } finally {
+            if (con != null) con.disconnect();
         }
     }
 
     @Override
     public List<TTSSpeaker> listSpeakers() {
         List<TTSSpeaker> speakers = new ArrayList<>();
+        HttpURLConnection con = null;
         try {
-            HttpURLConnection con = open(baseUrl() + "/speakers", "GET", 5000, 10000);
-            if (con.getResponseCode() != 200) { con.disconnect(); return speakers; }
-            String body = readString(con.getInputStream());
-            con.disconnect();
+            con = open(baseUrl() + "/speakers", "GET", 5000, 10000);
+            if (con.getResponseCode() != 200) return speakers;
+            String body = readString(con.getInputStream(), con.getContentLengthLong(),
+                    MAX_JSON_RESPONSE_BYTES, "speaker response");
 
             JsonArray arr = JsonParser.parseString(body).getAsJsonArray();
             for (var el : arr) {
@@ -91,6 +96,8 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
             }
         } catch (Exception e) {
             TTSAddon.LOGGER.warn("ABS TTS: failed to fetch speakers from {}: {}", id, e.toString());
+        } finally {
+            if (con != null) con.disconnect();
         }
         return speakers;
     }
@@ -115,17 +122,21 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
         String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8);
 
         // 1. audio_query
+        String audioQueryJson;
         HttpURLConnection queryCon = open(
                 base + "/audio_query?text=" + encodedText + "&speaker=" + speakerId, "POST", 5000, 30000);
-        queryCon.setDoOutput(true);
-        queryCon.getOutputStream().close();
-        if (queryCon.getResponseCode() != 200) {
-            String err = readError(queryCon);
+        try {
+            queryCon.setDoOutput(true);
+            queryCon.getOutputStream().close();
+            int responseCode = queryCon.getResponseCode();
+            if (responseCode != 200) {
+                throw new IOException(id + " /audio_query failed: HTTP " + responseCode + " " + readError(queryCon));
+            }
+            audioQueryJson = readString(queryCon.getInputStream(), queryCon.getContentLengthLong(),
+                    MAX_JSON_RESPONSE_BYTES, "audio_query response");
+        } finally {
             queryCon.disconnect();
-            throw new IOException(id + " /audio_query failed: HTTP " + queryCon.getResponseCode() + " " + err);
         }
-        String audioQueryJson = readString(queryCon.getInputStream());
-        queryCon.disconnect();
 
         // 2. パラメータを適用（pauseLength は -1 = null/自動）
         JsonObject query = JsonParser.parseString(audioQueryJson).getAsJsonObject();
@@ -143,17 +154,22 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
         byte[] queryBytes = query.toString().getBytes(StandardCharsets.UTF_8);
 
         // 3. synthesis → WAV
+        byte[] wav;
         HttpURLConnection synthCon = open(base + "/synthesis?speaker=" + speakerId, "POST", 5000, 60000);
-        synthCon.setDoOutput(true);
-        synthCon.setRequestProperty("Content-Type", "application/json");
-        synthCon.setRequestProperty("Accept", "audio/wav");
-        try (OutputStream os = synthCon.getOutputStream()) { os.write(queryBytes); }
-        if (synthCon.getResponseCode() != 200) {
+        try {
+            synthCon.setDoOutput(true);
+            synthCon.setRequestProperty("Content-Type", "application/json");
+            synthCon.setRequestProperty("Accept", "audio/wav");
+            try (OutputStream os = synthCon.getOutputStream()) { os.write(queryBytes); }
+            int responseCode = synthCon.getResponseCode();
+            if (responseCode != 200) {
+                throw new IOException(id + " /synthesis failed: HTTP " + responseCode + " " + readError(synthCon));
+            }
+            wav = readBytes(synthCon.getInputStream(), synthCon.getContentLengthLong(),
+                    MAX_WAV_RESPONSE_BYTES, "synthesis WAV response");
+        } finally {
             synthCon.disconnect();
-            throw new IOException(id + " /synthesis failed: HTTP " + synthCon.getResponseCode());
         }
-        byte[] wav = readBytes(synthCon.getInputStream());
-        synthCon.disconnect();
 
         // 4. WAV → Ogg Vorbis
         return FfmpegTranscoder.toOgg(wav, TTSConfig.get().ffmpegPath());
@@ -169,17 +185,35 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
         return con;
     }
 
-    private static String readString(InputStream is) throws IOException {
-        try (is) { return new String(is.readAllBytes(), StandardCharsets.UTF_8); }
+    static String readString(InputStream input, long declaredLength, int maxBytes, String description)
+            throws IOException {
+        return new String(readBytes(input, declaredLength, maxBytes, description), StandardCharsets.UTF_8);
     }
 
-    private static byte[] readBytes(InputStream is) throws IOException {
-        try (is) { return is.readAllBytes(); }
+    static byte[] readBytes(InputStream input, long declaredLength, int maxBytes, String description)
+            throws IOException {
+        if (maxBytes < 1) throw new IllegalArgumentException("maxBytes must be positive");
+        if (declaredLength > maxBytes) {
+            try (input) {
+                throw new IOException(description + " exceeds " + maxBytes + " bytes");
+            }
+        }
+        try (input) {
+            byte[] bytes = input.readNBytes(maxBytes + 1);
+            if (bytes.length > maxBytes) {
+                throw new IOException(description + " exceeds " + maxBytes + " bytes");
+            }
+            return bytes;
+        }
     }
 
     private static String readError(HttpURLConnection con) {
         try (InputStream es = con.getErrorStream()) {
-            return es == null ? "" : new String(es.readAllBytes(), StandardCharsets.UTF_8);
+            if (es == null) return "";
+            byte[] bytes = es.readNBytes(MAX_ERROR_RESPONSE_BYTES + 1);
+            boolean truncated = bytes.length > MAX_ERROR_RESPONSE_BYTES;
+            int length = Math.min(bytes.length, MAX_ERROR_RESPONSE_BYTES);
+            return new String(bytes, 0, length, StandardCharsets.UTF_8) + (truncated ? "…" : "");
         } catch (Exception e) { return ""; }
     }
 }
