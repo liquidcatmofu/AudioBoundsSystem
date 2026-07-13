@@ -1,6 +1,7 @@
 package io.github.liquidcatmofu.abs.server;
 
 import dev.architectury.event.events.common.LifecycleEvent;
+import dev.architectury.event.events.common.PlayerEvent;
 import io.github.liquidcatmofu.abs.audio.FfmpegSupport;
 import io.github.liquidcatmofu.abs.library.ABSLibrary;
 import io.github.liquidcatmofu.abs.library.LibraryCacheMaintenance;
@@ -10,6 +11,8 @@ import net.minecraft.world.level.storage.LevelResource;
 
 public class ABSServerLifecycle {
     public static void register() {
+        PlayerEvent.PLAYER_QUIT.register(WebRpcService::playerDisconnected);
+
         LifecycleEvent.SERVER_STARTING.register(server -> {
             var worldRoot = server.getWorldPath(LevelResource.ROOT);
             ABSLibrary.init(worldRoot);

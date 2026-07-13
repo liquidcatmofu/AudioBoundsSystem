@@ -3,7 +3,6 @@ package io.github.liquidcatmofu.abs.server.web;
 import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
-import io.github.liquidcatmofu.abs.network.ChunkedTransferAssembler;
 import io.github.liquidcatmofu.abs.network.WebRpcProtocol;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
@@ -11,6 +10,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -28,6 +28,7 @@ public final class WebRpcService {
     private static final int CHUNKS_PER_BATCH = 8;
     private static final long BATCH_DELAY_MILLIS = 50;
     private static final long REQUEST_EXPIRY_MILLIS = 120_000;
+    private static final int MEMORY_BODY_THRESHOLD = RequestBodyReader.MAX_JSON_BYTES;
 
     private static final Map<RequestKey, RequestState> requests = new ConcurrentHashMap<>();
     private static final Map<UUID, AtomicInteger> playerRequestCounts = new ConcurrentHashMap<>();
@@ -53,6 +54,7 @@ public final class WebRpcService {
         ScheduledExecutorService running = executor;
         executor = null;
         router = null;
+        requests.values().forEach(state -> closeBody(state.body()));
         requests.clear();
         playerRequestCounts.clear();
         playerSessions.clear();
@@ -63,6 +65,18 @@ public final class WebRpcService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    public static void playerDisconnected(ServerPlayer player) {
+        UUID playerUuid = player.getUUID();
+        for (Map.Entry<RequestKey, RequestState> entry : requests.entrySet()) {
+            if (!entry.getKey().playerUuid().equals(playerUuid)) continue;
+            RequestState state = entry.getValue();
+            if (requests.remove(entry.getKey(), state)) closeBody(state.body());
+        }
+        playerRequestCounts.remove(playerUuid);
+        UUID session = playerSessions.remove(playerUuid);
+        if (session != null) WebSessionStore.invalidate(session);
     }
 
     public static void startRequest(ServerPlayer player, UUID requestId, String method, String path,
@@ -87,10 +101,19 @@ public final class WebRpcService {
         }
 
         RequestKey key = new RequestKey(playerUuid, requestId);
+        WebRpcRequestBody body;
+        try {
+            body = totalLength == 0 ? null
+                    : new WebRpcRequestBody(totalLength, MEMORY_BODY_THRESHOLD, WebRpcProtocol.MAX_BODY_BYTES);
+        } catch (IOException e) {
+            releasePlayer(playerUuid, count);
+            sendError(player, requestId, 500, "Could not prepare request storage");
+            return;
+        }
         RequestState state = new RequestState(player, method, URI.create(path), contentType, filename,
-                csrfHeader, totalLength, digest, System.currentTimeMillis(),
-                new ChunkedTransferAssembler(WebRpcProtocol.MAX_BODY_BYTES));
+                csrfHeader, totalLength, digest, System.currentTimeMillis(), body);
         if (requests.putIfAbsent(key, state) != null) {
+            closeBody(body);
             releasePlayer(playerUuid, count);
             sendError(player, requestId, 409, "Duplicate WebUI request id");
             return;
@@ -102,7 +125,7 @@ public final class WebRpcService {
             if (!WebRpcProtocol.digestMatches(new byte[0], digest)) {
                 sendError(player, requestId, 400, "Request checksum mismatch");
             } else {
-                dispatch(requestId, state, new byte[0]);
+                dispatch(requestId, state);
             }
         }
     }
@@ -113,34 +136,38 @@ public final class WebRpcService {
         RequestState state = requests.get(key);
         if (state == null) return;
         try {
-            byte[] complete = state.assembler().accept(totalLength, offset, chunk);
-            if (complete == null) return;
+            if (!state.body().accept(totalLength, offset, chunk)) return;
             if (!requests.remove(key, state)) return;
             releasePlayer(player.getUUID(), playerRequestCounts.get(player.getUUID()));
-            if (!WebRpcProtocol.digestMatches(complete, state.digest())) {
+            if (!state.body().digestMatches(state.digest())) {
+                closeBody(state.body());
                 sendError(player, requestId, 400, "Request checksum mismatch");
                 return;
             }
-            dispatch(requestId, state, complete);
+            dispatch(requestId, state);
         } catch (IOException e) {
             if (requests.remove(key, state)) {
                 releasePlayer(player.getUUID(), playerRequestCounts.get(player.getUUID()));
             }
+            closeBody(state.body());
             sendError(player, requestId, 400, e.getMessage());
         }
     }
 
-    private static void dispatch(UUID requestId, RequestState state, byte[] body) {
+    private static void dispatch(UUID requestId, RequestState state) {
         ScheduledExecutorService running = executor;
         WebApiRouter currentRouter = router;
         if (running == null || currentRouter == null) {
+            closeBody(state.body());
             sendError(state.player(), requestId, 503, "WebUI RPC service is stopped");
             return;
         }
         try {
             running.execute(() -> {
-                try {
-                    MemoryHttpExchange exchange = new MemoryHttpExchange(state.method(), state.uri(), body);
+                try (WebRpcRequestBody body = state.body();
+                     InputStream input = body == null ? InputStream.nullInputStream() : body.openStream()) {
+                    MemoryHttpExchange exchange = new MemoryHttpExchange(state.method(), state.uri(), input);
+                    exchange.getRequestHeaders().set("Content-Length", Integer.toString(state.totalLength()));
                     exchange.getRequestHeaders().set("Cookie", WebAuthHelper.sessionCookieHeader(
                             sessionFor(state.player().getUUID())));
                     if (!state.contentType().isBlank()) {
@@ -164,6 +191,7 @@ public final class WebRpcService {
                 }
             });
         } catch (RejectedExecutionException e) {
+            closeBody(state.body());
             sendError(state.player(), requestId, 503, "WebUI RPC service is stopping");
         }
     }
@@ -246,7 +274,17 @@ public final class WebRpcService {
             RequestState state = entry.getValue();
             if (state.createdAtMillis() >= cutoff || !requests.remove(entry.getKey(), state)) continue;
             releasePlayer(entry.getKey().playerUuid(), playerRequestCounts.get(entry.getKey().playerUuid()));
+            closeBody(state.body());
             sendError(state.player(), entry.getKey().requestId(), 408, "WebUI request timed out");
+        }
+    }
+
+    private static void closeBody(WebRpcRequestBody body) {
+        if (body == null) return;
+        try {
+            body.close();
+        } catch (IOException e) {
+            AudioBoundsSystem.LOGGER.warn("ABS: failed to clean up WebUI request body", e);
         }
     }
 
@@ -260,5 +298,5 @@ public final class WebRpcService {
 
     private record RequestState(ServerPlayer player, String method, URI uri, String contentType,
                                 String filename, boolean csrfHeader, int totalLength, byte[] digest,
-                                long createdAtMillis, ChunkedTransferAssembler assembler) {}
+                                long createdAtMillis, WebRpcRequestBody body) {}
 }

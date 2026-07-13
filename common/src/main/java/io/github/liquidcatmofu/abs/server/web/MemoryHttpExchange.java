@@ -26,9 +26,13 @@ public final class MemoryHttpExchange extends HttpExchange {
     private int responseCode = -1;
 
     public MemoryHttpExchange(String method, URI uri, byte[] requestBody) {
+        this(method, uri, new ByteArrayInputStream(requestBody == null ? new byte[0] : requestBody));
+    }
+
+    public MemoryHttpExchange(String method, URI uri, InputStream requestBody) {
         this.method = method;
         this.uri = uri;
-        this.requestBody = new ByteArrayInputStream(requestBody == null ? new byte[0] : requestBody);
+        this.requestBody = requestBody;
     }
 
     @Override public Headers getRequestHeaders() { return requestHeaders; }
