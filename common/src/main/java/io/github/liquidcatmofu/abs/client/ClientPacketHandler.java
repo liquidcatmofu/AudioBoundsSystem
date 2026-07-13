@@ -15,8 +15,9 @@ import java.util.UUID;
 public final class ClientPacketHandler {
     private ClientPacketHandler() {}
 
-    public static void onPlayAudio(BlockPos pos, UUID token, String trackTitle, String subtitle, int subtitleDurationTicks) {
-        SpeakerAudioManager.INSTANCE.play(pos, token);
+    public static void onPlayAudio(BlockPos pos, UUID token, String contentHash,
+                                   String trackTitle, String subtitle, int subtitleDurationTicks) {
+        SpeakerAudioManager.INSTANCE.play(pos, token, contentHash);
         SubtitleOverlayManager.INSTANCE.show(pos, trackTitle, subtitle, subtitleDurationTicks);
     }
 

@@ -3,6 +3,7 @@ package io.github.liquidcatmofu.abs.library;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
+import io.github.liquidcatmofu.abs.io.AtomicFiles;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,11 +32,11 @@ public final class LibrarySequence {
             files.filter(p -> p.getFileName().toString().endsWith(".json")).forEach(p -> {
                 try {
                     result.add(GSON.fromJson(Files.readString(p, StandardCharsets.UTF_8), SequenceEntry.class));
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
                     AudioBoundsSystem.LOGGER.error("ABS: failed to read sequence metadata {}", p, e);
                 }
             });
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             AudioBoundsSystem.LOGGER.error("ABS: failed to list sequences in {}", folderId, e);
         }
         result.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
@@ -65,7 +66,7 @@ public final class LibrarySequence {
         entry.createdAt   = System.currentTimeMillis();
         entry.updatedAt   = entry.createdAt;
 
-        Files.writeString(dir.resolve(entry.id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
+        AtomicFiles.writeString(dir.resolve(entry.id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
         return entry;
     }
 
@@ -78,7 +79,7 @@ public final class LibrarySequence {
         if (steps != null) entry.steps = steps;
         entry.updatedAt = System.currentTimeMillis();
 
-        Files.writeString(seqDir(folderId).resolve(id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
+        AtomicFiles.writeString(seqDir(folderId).resolve(id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
         return entry;
     }
 

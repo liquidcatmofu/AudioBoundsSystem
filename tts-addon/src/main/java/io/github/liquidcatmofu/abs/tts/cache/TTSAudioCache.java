@@ -1,6 +1,8 @@
 package io.github.liquidcatmofu.abs.tts.cache;
 
 import io.github.liquidcatmofu.abs.tts.TTSAddon;
+import io.github.liquidcatmofu.abs.audio.AudioContent;
+import io.github.liquidcatmofu.abs.io.AtomicFiles;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -102,7 +104,8 @@ public final class TTSAudioCache {
             throw new IllegalStateException("TTSAudioCache not initialized");
         }
         Path path = resolve(speakerId, text);
-        Files.write(path, oggBytes);
+        AudioContent.requireOgg(oggBytes);
+        AtomicFiles.write(path, oggBytes);
         return "tts/" + path.getFileName().toString();
     }
 

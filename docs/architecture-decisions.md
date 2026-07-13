@@ -48,6 +48,24 @@ Status: Accepted
 
 `FolderAccess.ALLOWED` is documented as view/use access. Creating or deleting audio, TTS entries or sequences is therefore restricted to `OWNER` (with OP treated as owner by the existing access function). This closes mutation paths that previously checked only `canView()`.
 
+## ADR-009: Audio registration commits metadata last
+
+Status: Accepted
+
+Each source, Ogg or JSON file is written to a uniquely named temporary file in the target directory, forced to storage, and moved into place. Atomic move is preferred, with replace-move fallback where the filesystem does not support it. Multi-file registrations commit playable data first and metadata last, so interrupted operations are not discoverable through normal library listing. TTS re-synthesis writes a new hash-named Ogg, atomically switches metadata, then deletes the old Ogg.
+
+New audio metadata stores the SHA-256 of the Ogg content. Existing metadata without a hash remains readable. Exact TTS duplicates are suppressed only when request fields, content hash and an Ogg header all match, preserving legacy behavior while avoiding duplicate new registrations.
+
+## ADR-010: Client audio uses a 128 MiB content-addressed LRU cache
+
+Status: Accepted
+
+New play packets include the Ogg SHA-256. The client uses that hash as both the disk filename and dynamic resource identity. It checks and touches a verified disk entry before HTTP download, validates every downloaded Ogg header and SHA-256, and atomically commits successful downloads. Cache writes and startup enforce a 128 MiB limit by deleting the oldest last-accessed files first.
+
+Concurrent requests for the same hash are serialized inside one client, so only the first performs HTTP transfer and followers reuse the committed file. Dynamic sound bytes are removed only after the last active speaker using that hash stops. Cache files are shared safely across servers because their identity is the content hash.
+
+Server-driven invalidation is deferred: deleted server content naturally ages out through LRU. Legacy metadata without `contentHash` remains compatible but uses the old download-every-time path until re-imported, re-synthesized or migrated.
+
 ## Open decisions
 
 ### TOML authority

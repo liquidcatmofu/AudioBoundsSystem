@@ -161,3 +161,43 @@ Behavioral limits added in this phase:
 - TTS text: 10,000 characters
 - Concurrent create/re-synthesis operations: 2 per running HTTP handler, excess returns HTTP 429
 - Controller configuration: at most 256 targets, 15 queues and 256 entries per queue
+
+## Cache and registration integrity
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 6s
+```
+
+Twenty-two tests now pass: 15 in `common` and 7 in `tts-addon`. New tests cover atomic replacement without leftover temporary files, Ogg magic rejection and deterministic content hashing. Library-level interrupted-write and duplicate-registration tests still require a controllable cache-root seam or Minecraft integration fixture.
+
+```text
+rtk ./gradlew build
+BUILD SUCCESSFUL in 39s
+53 actionable tasks: 22 executed, 31 up-to-date
+```
+
+New registrations store a SHA-256 content hash and use hash-suffixed Ogg filenames. Source, Ogg and JSON writes use `AtomicFiles`; metadata is committed last. Existing UUID-only cache filenames and metadata without `contentHash` remain readable.
+
+## Client content cache
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 16s
+```
+
+Twenty-five tests now pass: 18 in `common` and 7 in `tts-addon`. Client-cache tests cover verified store/reload, corrupted-file deletion and least-recently-accessed eviction. The production maximum is 128 MiB and individual audio files remain limited to 64 MiB.
+
+```text
+rtk ./gradlew build
+BUILD SUCCESSFUL in 28s
+53 actionable tasks: 13 executed, 40 up-to-date
+```
+
+Manual tests still required:
+
+- Confirm the second playback of a new hash performs no HTTP audio transfer.
+- Start the same hash on multiple speakers concurrently and verify one download and independent playback.
+- Fill beyond 128 MiB with real Ogg files and inspect oldest-access eviction.
+- Verify behavior when the server deletes an entry that remains in the client LRU.
+- Confirm legacy hashless entries continue to play through the fallback path.

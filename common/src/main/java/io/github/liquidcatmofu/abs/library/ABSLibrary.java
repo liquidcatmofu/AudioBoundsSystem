@@ -3,6 +3,7 @@ package io.github.liquidcatmofu.abs.library;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
+import io.github.liquidcatmofu.abs.io.AtomicFiles;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,7 +32,7 @@ public final class ABSLibrary {
         libraryRoot = serverDir.resolve("abs_library");
         try {
             Files.createDirectories(libraryRoot);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             AudioBoundsSystem.LOGGER.error("ABS: failed to create abs_library dir", e);
         }
     }
@@ -64,7 +65,7 @@ public final class ABSLibrary {
         Files.createDirectories(dir.resolve("audio"));
         Files.createDirectories(dir.resolve("tts"));
         Files.createDirectories(dir.resolve("sequences"));
-        Files.writeString(dir.resolve("meta.json"), GSON.toJson(folder), StandardCharsets.UTF_8);
+        AtomicFiles.writeString(dir.resolve("meta.json"), GSON.toJson(folder), StandardCharsets.UTF_8);
     }
 
     public static List<LibraryFolder> loadAll() {

@@ -3,6 +3,7 @@ package io.github.liquidcatmofu.abs.blockentity;
 import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
+import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
@@ -183,11 +184,13 @@ public class SpeakerBlockEntity extends BlockEntity {
             return;
         }
 
-        Path path = LibraryRef.resolve(audioFile).orElse(null);
-        if (path == null) {
+        LibraryRef.ResolvedAudio resolved = LibraryRef.resolveAudio(audioFile).orElse(null);
+        if (resolved == null) {
             AudioBoundsSystem.LOGGER.warn("ABS: Could not resolve audio ref: {}", audioFile);
             return;
         }
+        Path path = resolved.path();
+        String contentHash = AudioContent.isSha256(resolved.contentHash()) ? resolved.contentHash() : "";
 
         long durationTicks;
         try {
@@ -210,6 +213,7 @@ public class SpeakerBlockEntity extends BlockEntity {
                 buf.writeBlockPos(worldPosition);
                 buf.writeLong(token.getMostSignificantBits());
                 buf.writeLong(token.getLeastSignificantBits());
+                buf.writeUtf(contentHash, 64);
                 buf.writeUtf(subtitleEnabled ? displayTrackTitle() : "", 128);
                 buf.writeUtf(subtitleEnabled ? subtitle : "", 512);
                 buf.writeVarInt(100);

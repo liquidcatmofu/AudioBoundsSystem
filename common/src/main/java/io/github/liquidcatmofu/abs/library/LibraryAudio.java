@@ -4,7 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.FfmpegTranscoder;
+import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
+import io.github.liquidcatmofu.abs.io.AtomicFiles;
 import io.github.liquidcatmofu.abs.server.ABSHttpServer;
 
 import java.io.IOException;
@@ -34,11 +36,11 @@ public final class LibraryAudio {
             files.filter(p -> p.getFileName().toString().endsWith(".json")).forEach(p -> {
                 try {
                     result.add(GSON.fromJson(Files.readString(p, StandardCharsets.UTF_8), AudioEntry.class));
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
                     AudioBoundsSystem.LOGGER.error("ABS: failed to read audio metadata {}", p, e);
                 }
             });
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             AudioBoundsSystem.LOGGER.error("ABS: failed to list audio in {}", folderId, e);
         }
         result.sort((a, b) -> Long.compare(b.uploadedAt, a.uploadedAt));
@@ -64,35 +66,48 @@ public final class LibraryAudio {
         String ext = extensionOf(originalName);
         String id = UUID.randomUUID().toString();
 
-        // 原本を保存（将来の非破壊編集用）
+        // 変換と検証を終えてから、原本・キャッシュ・メタデータの順で確定する。
         String srcFile = id + ".src." + ext;
-        Files.write(dir.resolve(srcFile), data);
-
-        // Ogg 変換 → abs_cache へ
         byte[] ogg = FfmpegTranscoder.toOgg(data, ext);
-        String cacheFile = id + ".ogg";
+        AudioContent.requireOgg(ogg);
+        String contentHash = AudioContent.sha256(ogg);
+        String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
+        Path srcPath = dir.resolve(srcFile);
         Path cachePath = ABSHttpServer.getCacheDir().resolve(cacheFile);
-        Files.write(cachePath, ogg);
-
-        long durationTicks;
+        Path metadataPath = dir.resolve(id + ".json");
+        boolean committed = false;
         try {
-            durationTicks = OggAudioDuration.readDurationTicks(cachePath);
-        } catch (IOException e) {
-            durationTicks = 0;
+            AtomicFiles.write(srcPath, data);
+            AtomicFiles.write(cachePath, ogg);
+
+            long durationTicks;
+            try {
+                durationTicks = OggAudioDuration.readDurationTicks(cachePath);
+            } catch (IOException e) {
+                durationTicks = 0;
+            }
+
+            AudioEntry entry = new AudioEntry();
+            entry.id = id;
+            entry.displayName = stripExtension(originalName);
+            entry.originalName = originalName;
+            entry.srcFile = srcFile;
+            entry.cacheFile = cacheFile;
+            entry.contentHash = contentHash;
+            entry.durationTicks = durationTicks;
+            entry.uploadedBy = uploader.toString();
+            entry.uploadedAt = System.currentTimeMillis();
+
+            AtomicFiles.writeString(metadataPath, GSON.toJson(entry), StandardCharsets.UTF_8);
+            committed = true;
+            return entry;
+        } finally {
+            if (!committed) {
+                Files.deleteIfExists(metadataPath);
+                Files.deleteIfExists(cachePath);
+                Files.deleteIfExists(srcPath);
+            }
         }
-
-        AudioEntry entry = new AudioEntry();
-        entry.id = id;
-        entry.displayName = stripExtension(originalName);
-        entry.originalName = originalName;
-        entry.srcFile = srcFile;
-        entry.cacheFile = cacheFile;
-        entry.durationTicks = durationTicks;
-        entry.uploadedBy = uploader.toString();
-        entry.uploadedAt = System.currentTimeMillis();
-
-        Files.writeString(dir.resolve(id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
-        return entry;
     }
 
     public static boolean delete(String folderId, String audioId) throws IOException {

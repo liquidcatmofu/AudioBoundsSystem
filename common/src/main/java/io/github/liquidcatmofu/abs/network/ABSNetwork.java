@@ -242,10 +242,12 @@ public final class ABSNetwork {
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, PLAY_AUDIO, (buf, ctx) -> {
             BlockPos pos = buf.readBlockPos();
             UUID token = new UUID(buf.readLong(), buf.readLong());
+            String contentHash = buf.readUtf(64);
             String trackTitle = buf.readUtf(128);
             String subtitle = buf.readUtf(512);
             int subtitleDurationTicks = buf.readVarInt();
-            ctx.queue(() -> ClientPacketHandler.onPlayAudio(pos, token, trackTitle, subtitle, subtitleDurationTicks));
+            ctx.queue(() -> ClientPacketHandler.onPlayAudio(
+                    pos, token, contentHash, trackTitle, subtitle, subtitleDurationTicks));
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, STOP_AUDIO, (buf, ctx) -> {

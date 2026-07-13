@@ -3,7 +3,9 @@ package io.github.liquidcatmofu.abs.library;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
+import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
+import io.github.liquidcatmofu.abs.io.AtomicFiles;
 import io.github.liquidcatmofu.abs.server.ABSHttpServer;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
 
@@ -15,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Map;
 import java.util.stream.Stream;
 
 public final class LibraryTts {
@@ -34,11 +37,11 @@ public final class LibraryTts {
             files.filter(p -> p.getFileName().toString().endsWith(".json")).forEach(p -> {
                 try {
                     result.add(GSON.fromJson(Files.readString(p, StandardCharsets.UTF_8), TtsEntry.class));
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
                     AudioBoundsSystem.LOGGER.error("ABS: failed to read tts metadata {}", p, e);
                 }
             });
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             AudioBoundsSystem.LOGGER.error("ABS: failed to list tts in {}", folderId, e);
         }
         result.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
@@ -56,49 +59,71 @@ public final class LibraryTts {
     }
 
     /** 合成済みの ogg を保存し、メタデータ（スクリプト込み）を書き出す。 */
-    public static TtsEntry create(String folderId, String displayName, TTSSynthesisRequest req,
-                                  String speakerName, byte[] ogg, UUID creator) throws IOException {
+    public static synchronized TtsEntry create(String folderId, String displayName, TTSSynthesisRequest req,
+                                               String speakerName, byte[] ogg, UUID creator) throws IOException {
         Path dir = ttsDir(folderId);
         Files.createDirectories(dir);
 
-        String id = UUID.randomUUID().toString();
-        String cacheFile = id + ".ogg";
-        Path cachePath = ABSHttpServer.getCacheDir().resolve(cacheFile);
-        Files.write(cachePath, ogg);
-
-        long durationTicks;
-        try {
-            durationTicks = OggAudioDuration.readDurationTicks(cachePath);
-        } catch (IOException e) {
-            durationTicks = 0;
+        AudioContent.requireOgg(ogg);
+        String contentHash = AudioContent.sha256(ogg);
+        TtsEntry duplicate = findDuplicate(folderId, req, contentHash);
+        if (duplicate != null) {
+            return duplicate;
         }
 
-        TtsEntry entry = new TtsEntry();
-        entry.id = id;
-        entry.displayName = (displayName == null || displayName.isBlank())
-                ? trimForName(req.text) : displayName;
-        entry.engineId = req.engineId;
-        entry.speakerId = req.speakerId;
-        entry.speakerName = speakerName;
-        entry.text = req.text;
-        entry.params = req.params;
-        entry.cacheFile = cacheFile;
-        entry.durationTicks = durationTicks;
-        entry.createdBy = creator.toString();
-        entry.createdAt = System.currentTimeMillis();
+        String id = UUID.randomUUID().toString();
+        String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
+        Path cachePath = ABSHttpServer.getCacheDir().resolve(cacheFile);
+        Path metadataPath = dir.resolve(id + ".json");
+        boolean committed = false;
+        try {
+            AtomicFiles.write(cachePath, ogg);
 
-        Files.writeString(dir.resolve(id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
-        return entry;
+            long durationTicks;
+            try {
+                durationTicks = OggAudioDuration.readDurationTicks(cachePath);
+            } catch (IOException e) {
+                durationTicks = 0;
+            }
+
+            TtsEntry entry = new TtsEntry();
+            entry.id = id;
+            entry.displayName = (displayName == null || displayName.isBlank())
+                    ? trimForName(req.text) : displayName;
+            entry.engineId = req.engineId;
+            entry.speakerId = req.speakerId;
+            entry.speakerName = speakerName;
+            entry.text = req.text;
+            entry.params = req.params;
+            entry.cacheFile = cacheFile;
+            entry.contentHash = contentHash;
+            entry.durationTicks = durationTicks;
+            entry.createdBy = creator.toString();
+            entry.createdAt = System.currentTimeMillis();
+
+            AtomicFiles.writeString(metadataPath, GSON.toJson(entry), StandardCharsets.UTF_8);
+            committed = true;
+            return entry;
+        } finally {
+            if (!committed) {
+                Files.deleteIfExists(metadataPath);
+                Files.deleteIfExists(cachePath);
+            }
+        }
     }
 
     /** 既存エントリを再合成して上書き保存する（ID・cacheFile は維持）。 */
-    public static TtsEntry update(String folderId, String id, String displayName,
-                                  TTSSynthesisRequest req, String speakerName, byte[] ogg) throws IOException {
+    public static synchronized TtsEntry update(String folderId, String id, String displayName,
+                                               TTSSynthesisRequest req, String speakerName, byte[] ogg) throws IOException {
         TtsEntry entry = load(folderId, id)
                 .orElseThrow(() -> new IOException("TTS entry not found: " + id));
 
-        Path cachePath = ABSHttpServer.getCacheDir().resolve(entry.cacheFile);
-        Files.write(cachePath, ogg);
+        AudioContent.requireOgg(ogg);
+        String contentHash = AudioContent.sha256(ogg);
+        String oldCacheFile = entry.cacheFile;
+        String newCacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
+        Path cachePath = ABSHttpServer.getCacheDir().resolve(newCacheFile);
+        AtomicFiles.write(cachePath, ogg);
 
         long durationTicks;
         try {
@@ -112,6 +137,8 @@ public final class LibraryTts {
         entry.speakerName = speakerName;
         entry.text = req.text;
         entry.params = req.params;
+        entry.cacheFile = newCacheFile;
+        entry.contentHash = contentHash;
         entry.durationTicks = durationTicks;
         if (displayName != null && !displayName.isBlank()) {
             entry.displayName = displayName;
@@ -119,8 +146,19 @@ public final class LibraryTts {
             entry.displayName = trimForName(req.text);
         }
 
-        Files.writeString(ttsDir(folderId).resolve(id + ".json"), GSON.toJson(entry), StandardCharsets.UTF_8);
-        return entry;
+        try {
+            AtomicFiles.writeString(ttsDir(folderId).resolve(id + ".json"),
+                    GSON.toJson(entry), StandardCharsets.UTF_8);
+            if (oldCacheFile != null && !oldCacheFile.equals(newCacheFile)) {
+                Files.deleteIfExists(ABSHttpServer.getCacheDir().resolve(oldCacheFile));
+            }
+            return entry;
+        } catch (IOException e) {
+            if (!newCacheFile.equals(oldCacheFile)) {
+                Files.deleteIfExists(cachePath);
+            }
+            throw e;
+        }
     }
 
     public static boolean delete(String folderId, String id) throws IOException {
@@ -151,5 +189,26 @@ public final class LibraryTts {
         if (text == null) return "TTS";
         String t = text.strip();
         return t.length() > 20 ? t.substring(0, 20) + "…" : t;
+    }
+
+    private static TtsEntry findDuplicate(String folderId, TTSSynthesisRequest req, String contentHash) {
+        for (TtsEntry entry : list(folderId)) {
+            if (!java.util.Objects.equals(entry.engineId, req.engineId)
+                    || !java.util.Objects.equals(entry.speakerId, req.speakerId)
+                    || !java.util.Objects.equals(entry.text, req.text)
+                    || !normalizedParams(entry.params).equals(normalizedParams(req.params))
+                    || !contentHash.equals(entry.contentHash)) {
+                continue;
+            }
+            Path cached = cacheFilePath(entry);
+            if (AudioContent.hasOggHeader(cached)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private static Map<String, Double> normalizedParams(Map<String, Double> params) {
+        return params == null ? Map.of() : Map.copyOf(params);
     }
 }

@@ -12,11 +12,18 @@ public final class LibraryRef {
 
     private LibraryRef() {}
 
+    public record ResolvedAudio(Path path, String contentHash) {}
+
     /**
      * 参照文字列を解決して abs_cache 内の実ファイル Path を返す。
      * 参照が存在しない場合は空の Optional を返す。
      */
     public static Optional<Path> resolve(String ref) {
+        return resolveAudio(ref).map(ResolvedAudio::path);
+    }
+
+    /** 音声実体と、利用可能ならSHA-256コンテンツハッシュを返す。 */
+    public static Optional<ResolvedAudio> resolveAudio(String ref) {
         if (ref == null || ref.isBlank()) return Optional.empty();
         if (ref.startsWith(PREFIX)) {
             String body = ref.substring(PREFIX.length());
@@ -26,8 +33,10 @@ public final class LibraryRef {
             String type     = parts[1];
             String entryId  = parts[2];
             return switch (type) {
-                case "audio" -> LibraryAudio.load(folderId, entryId).map(LibraryAudio::cacheFilePath);
-                case "tts"   -> LibraryTts.load(folderId, entryId).map(LibraryTts::cacheFilePath);
+                case "audio" -> LibraryAudio.load(folderId, entryId)
+                        .map(entry -> new ResolvedAudio(LibraryAudio.cacheFilePath(entry), entry.contentHash));
+                case "tts"   -> LibraryTts.load(folderId, entryId)
+                        .map(entry -> new ResolvedAudio(LibraryTts.cacheFilePath(entry), entry.contentHash));
                 default      -> Optional.empty();
             };
         }

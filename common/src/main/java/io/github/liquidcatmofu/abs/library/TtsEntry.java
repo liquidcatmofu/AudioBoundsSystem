@@ -13,6 +13,7 @@ public class TtsEntry {
     public String text;
     public Map<String, Double> params = new HashMap<>();
     public String cacheFile;      // abs_cache/ からの相対パス（SpeakerBlock が参照）
+    public String contentHash;    // Oggバイト列のSHA-256（旧エントリではnull）
     public long   durationTicks;
     public String createdBy;
     public long   createdAt;

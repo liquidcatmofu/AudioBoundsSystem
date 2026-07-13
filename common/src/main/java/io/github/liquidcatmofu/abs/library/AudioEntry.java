@@ -7,6 +7,7 @@ public class AudioEntry {
     public String originalName;
     public String srcFile;        // abs_library/<folder>/audio/ 内の原本ファイル名
     public String cacheFile;      // abs_cache/ からの相対パス（SpeakerBlock が参照）
+    public String contentHash;    // Oggバイト列のSHA-256（旧エントリではnull）
     public long   durationTicks;
     public double volumeDb = 0.0; // 将来の音量編集用
     public long   trimStartMs = 0;   // 将来のトリム編集用
