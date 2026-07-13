@@ -7,6 +7,8 @@ import io.github.liquidcatmofu.abs.client.ClientPacketHandler;
 import io.github.liquidcatmofu.abs.client.LibraryEntryInfo;
 import io.github.liquidcatmofu.abs.client.LibraryFolderInfo;
 import io.github.liquidcatmofu.abs.client.audio.SpeakerAudioManager;
+import io.github.liquidcatmofu.abs.client.web.WebRpcClient;
+import io.github.liquidcatmofu.abs.client.web.ClientWebServer;
 import io.github.liquidcatmofu.abs.config.AudioControllerTomlConfig;
 import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
@@ -25,6 +27,7 @@ import io.github.liquidcatmofu.abs.library.LibraryTts;
 import io.github.liquidcatmofu.abs.library.SequenceEntry;
 import io.github.liquidcatmofu.abs.library.TtsEntry;
 import io.github.liquidcatmofu.abs.server.AudioTransferService;
+import io.github.liquidcatmofu.abs.server.web.WebRpcService;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -52,6 +55,11 @@ public final class ABSNetwork {
     public static final ResourceLocation REQUEST_AUDIO_TRANSFER = new ResourceLocation("abs", "request_audio_transfer");
     public static final ResourceLocation AUDIO_TRANSFER_CHUNK = new ResourceLocation("abs", "audio_transfer_chunk");
     public static final ResourceLocation AUDIO_TRANSFER_ERROR = new ResourceLocation("abs", "audio_transfer_error");
+    public static final ResourceLocation WEB_RPC_REQUEST_START = new ResourceLocation("abs", "web_rpc_request_start");
+    public static final ResourceLocation WEB_RPC_REQUEST_CHUNK = new ResourceLocation("abs", "web_rpc_request_chunk");
+    public static final ResourceLocation WEB_RPC_RESPONSE_START = new ResourceLocation("abs", "web_rpc_response_start");
+    public static final ResourceLocation WEB_RPC_RESPONSE_CHUNK = new ResourceLocation("abs", "web_rpc_response_chunk");
+    public static final ResourceLocation OPEN_WEB_UI = new ResourceLocation("abs", "open_web_ui");
     public static final ResourceLocation SAVE_SPEAKER_CONFIG = new ResourceLocation("abs", "save_speaker_config");
     public static final ResourceLocation SAVE_AUDIO_CONTROLLER_CONFIG =
             new ResourceLocation("abs", "save_audio_controller_config");
@@ -69,6 +77,35 @@ public final class ABSNetwork {
     private ABSNetwork() {}
 
     public static void registerServerHandlers() {
+        NetworkManager.registerReceiver(NetworkManager.Side.C2S, WEB_RPC_REQUEST_START, (buf, ctx) -> {
+            UUID requestId = buf.readUUID();
+            String method = buf.readUtf(8);
+            String path = buf.readUtf(1024);
+            String contentType = buf.readUtf(128);
+            String filename = buf.readUtf(1024);
+            boolean csrfHeader = buf.readBoolean();
+            int totalLength = buf.readVarInt();
+            byte[] digest = buf.readByteArray(WebRpcProtocol.DIGEST_BYTES);
+            ctx.queue(() -> {
+                if (ctx.getPlayer() instanceof ServerPlayer player) {
+                    WebRpcService.startRequest(player, requestId, method, path, contentType,
+                            filename, csrfHeader, totalLength, digest);
+                }
+            });
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.C2S, WEB_RPC_REQUEST_CHUNK, (buf, ctx) -> {
+            UUID requestId = buf.readUUID();
+            int totalLength = buf.readVarInt();
+            int offset = buf.readVarInt();
+            byte[] chunk = buf.readByteArray(WebRpcProtocol.MAX_CHUNK_BYTES);
+            ctx.queue(() -> {
+                if (ctx.getPlayer() instanceof ServerPlayer player) {
+                    WebRpcService.acceptChunk(player, requestId, totalLength, offset, chunk);
+                }
+            });
+        });
+
         NetworkManager.registerReceiver(NetworkManager.Side.C2S, REQUEST_AUDIO_TRANSFER, (buf, ctx) -> {
             UUID token = buf.readUUID();
             ctx.queue(() -> {
@@ -253,6 +290,9 @@ public final class ABSNetwork {
 
     @Environment(EnvType.CLIENT)
     public static void registerClientHandlers() {
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, OPEN_WEB_UI, (buf, ctx) ->
+                ctx.queue(() -> ClientWebServer.INSTANCE.open()));
+
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, PLAY_AUDIO, (buf, ctx) -> {
             BlockPos pos = buf.readBlockPos();
             UUID token = new UUID(buf.readLong(), buf.readLong());
@@ -282,6 +322,25 @@ public final class ABSNetwork {
             UUID token = buf.readUUID();
             String message = buf.readUtf(128);
             ctx.queue(() -> SpeakerAudioManager.INSTANCE.failTransfer(token, message));
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, WEB_RPC_RESPONSE_START, (buf, ctx) -> {
+            UUID requestId = buf.readUUID();
+            int status = buf.readVarInt();
+            String contentType = buf.readUtf(128);
+            int totalLength = buf.readVarInt();
+            byte[] digest = buf.readByteArray(WebRpcProtocol.DIGEST_BYTES);
+            ctx.queue(() -> WebRpcClient.INSTANCE.startResponse(
+                    requestId, status, contentType, totalLength, digest));
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.S2C, WEB_RPC_RESPONSE_CHUNK, (buf, ctx) -> {
+            UUID requestId = buf.readUUID();
+            int totalLength = buf.readVarInt();
+            int offset = buf.readVarInt();
+            byte[] chunk = buf.readByteArray(WebRpcProtocol.MAX_CHUNK_BYTES);
+            ctx.queue(() -> WebRpcClient.INSTANCE.acceptResponseChunk(
+                    requestId, totalLength, offset, chunk));
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, LIBRARY_FOLDERS_RESPONSE, (buf, ctx) -> {

@@ -34,6 +34,14 @@ public final class WebSessionStore {
         return sessionToken;
     }
 
+    /** Minecraft RPC transport用に、接続済みプレイヤーへ直接セッションを発行する。 */
+    public static UUID createSession(UUID playerUuid) {
+        purgeExpired();
+        UUID sessionToken = UUID.randomUUID();
+        store.put(sessionToken, new Entry(playerUuid, System.currentTimeMillis() + TTL_MS));
+        return sessionToken;
+    }
+
     public static Optional<UUID> getPlayerUuid(UUID sessionToken) {
         Entry entry = store.get(sessionToken);
         if (entry == null || System.currentTimeMillis() > entry.expiryMs()) {

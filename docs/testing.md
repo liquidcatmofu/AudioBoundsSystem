@@ -329,3 +329,16 @@ BUILD SUCCESSFUL in 13s
 ```
 
 Forty tests now pass across the project: 24 in `common` and 16 in `tts-addon`.
+
+## Loopback WebUI and Minecraft Web RPC
+
+`/abs ui` now starts an authenticated client listener on `127.0.0.1` with a dynamic port. The dedicated server lifecycle does not start `ABSHttpServer`. API requests and responses share 64 MiB bounds, 30 KiB chunks, ordered offsets and SHA-256 validation; uploads and preview Ogg responses therefore use the same transport. Server cache initialization was separated into `ServerAudioCache` so disabling HTTP does not affect upload, TTS registration, maintenance or playback.
+
+One new pure-Java test verifies Web RPC chunk sizing and digest rejection. Existing assembler, input-limit, authorization and in-memory exchange tests cover the reused lower layers.
+
+```text
+rtk ./gradlew :common:test
+BUILD SUCCESSFUL in 3s
+```
+
+Forty-one tests now pass across the project: 25 in `common` and 16 in `tts-addon`. A real `/abs ui` browser session, 64 MiB upload, Ogg preview and two-client authorization test remain required.

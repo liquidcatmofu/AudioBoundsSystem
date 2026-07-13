@@ -8,6 +8,8 @@ import io.github.liquidcatmofu.abs.client.gui.AudioControllerConfigScreen;
 import io.github.liquidcatmofu.abs.client.gui.SpeakerConfigScreen;
 import io.github.liquidcatmofu.abs.client.subtitle.SubtitleHudRenderer;
 import io.github.liquidcatmofu.abs.client.subtitle.SubtitleOverlayManager;
+import io.github.liquidcatmofu.abs.client.web.WebRpcClient;
+import io.github.liquidcatmofu.abs.client.web.ClientWebServer;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -28,6 +30,8 @@ public final class AudioBoundsSystemClient {
         });
         ClientPlayerEvent.CLIENT_PLAYER_QUIT.register(player -> {
             SpeakerAudioManager.INSTANCE.stopAll();
+            WebRpcClient.INSTANCE.clear();
+            ClientWebServer.INSTANCE.stop();
             SubtitleOverlayManager.INSTANCE.clear();
         });
     }

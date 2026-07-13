@@ -1,6 +1,6 @@
 # ABS / TTS Addon Implementation Status
 
-Last audited: 2026-07-13
+Last audited: 2026-07-14
 
 ## Audit basis
 
@@ -21,8 +21,8 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 
 | Feature | Status | Evidence | Main classes | Risks | Next action |
 |---|---|---|---|---|---|
-| Web dashboard and authentication | Verified working (HTTP); RPC migration in progress | Handoff runtime report; static WebUI and HTTP routes exist; API handlers now share a transport-neutral router | `ABSHttpServer`, `WebApiRouter`, `MemoryHttpExchange`, `WebSessionStore` | Server still binds all interfaces until the loopback client bridge is complete | Finish Minecraft RPC, then disable the server HTTP listener by default |
-| WebUI library configuration | Implemented but untested | Original flow was runtime-verified; bounded request and authorization changes have unit coverage only | `LibraryApiHandler`, `RequestBodyReader`, `ABSLibrary`, `webui/app.js` | 64 KiB JSON and 64 MiB upload limits are fixed constants | Run WebUI mutation/upload acceptance tests |
+| Web dashboard and authentication | Implemented but untested on Minecraft RPC | `/abs ui` opens a token-authenticated loopback-only client server; API handlers share a transport-neutral router; the server HTTP listener is not started | `ClientWebServer`, `WebRpcClient`, `WebRpcService`, `WebApiRouter` | Full browser and multiplayer runtime verification remains | Run login-free identity, mutation and disconnect acceptance tests |
+| WebUI library configuration | Implemented but untested on Minecraft RPC | JSON, preview and upload bodies use bounded chunked RPC while existing authorization handlers are reused | `LibraryApiHandler`, `RequestBodyReader`, `WebRpcProtocol`, `webui/app.js` | 64 KiB JSON and 64 MiB upload limits are fixed; uploads are currently assembled in memory | Run upload acceptance tests, then move large bodies to temporary files |
 | TTS provider discovery | Implemented but untested | Five providers are registered; fake-provider bridge, parameter validation and five-second discovery-cache tests pass | `TTSAddon`, `TTSProviderRegistry`, `AddonTTSBridge` | A cache miss still probes synchronously; registry has no lifecycle reset | Add an asynchronous refresh path if runtime latency remains visible |
 | VOICEVOX-compatible synthesis | Verified working | Handoff runtime report; `/audio_query` and `/synthesis` implementation exists; bounded-reader tests cover declared and streamed response sizes | `VoiceVoxCompatibleProvider` | Blocking calls occupy an HTTP worker; coarse error types; no live HTTP fixture test | Add a transport seam and error classification |
 | WAV/audio-to-Ogg transcoding | Verified working | User confirmed operation after Core/TTS consolidation; identical-PCM investigation verified bit-exact Ogg output locally | `audio.FfmpegTranscoder`, `tts-addon.transcode.FfmpegTranscoder` | 90-second timeout is fixed; automated external-process coverage remains | Add a process-runner test seam |
@@ -43,7 +43,7 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 | Client lifecycle | Implemented but untested | Active sound/subtitle state and in-flight download tasks clear on player quit | `AudioBoundsSystemClient`, `SpeakerAudioManager` | Download executor lives for the client process, although its threads are daemon threads | Add disconnect-during-download integration test |
 | Authorization | Implemented but untested | Sessions, mutation header, folder mutation policy, speaker checks and controller owner/OP/distance checks exist | `WebSessionStore`, `WebAuthHelper`, `ABSLibrary`, `ABSNetwork` | Existing ownerless controllers are claimed on first save; Minecraft packet paths lack integration tests | Run owner/non-owner/OP multiplayer tests |
 | Error handling | Partial | Failures are caught at HTTP/provider boundaries; Provider JSON/WAV/error bodies are bounded | Multiple | Most errors collapse to HTTP 502 or null; diagnostic playback logs use WARN | Add typed failures and rate-limited/user-facing diagnostics |
-| Automated tests | Partial | 40 pure-Java bridge/cache/bounds/endpoint/request/security/integrity/client-cache/maintenance/config/provider/transfer tests pass | Test sources under `common` and `tts-addon` | Full registration, actual playback, lifecycle and loader paths remain uncovered | Continue stabilization regression coverage |
+| Automated tests | Partial | 41 pure-Java bridge/cache/bounds/endpoint/request/security/integrity/client-cache/maintenance/config/provider/transfer tests pass | Test sources under `common` and `tts-addon` | Full registration, actual playback, browser RPC, lifecycle and loader paths remain uncovered | Continue stabilization regression coverage |
 | CI | Missing | No `.github/workflows` files | — | Regressions are not automatically detected | Add after local tests are stable |
 
 ## Storage locations
@@ -60,9 +60,11 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 
 | Owner | Work | Current lifecycle |
 |---|---|---|
-| `ABSHttpServer` fixed pool (8 daemon threads) | WebUI/API, synthesis call, file reads/writes | Temporary until WebUI RPC migration; owned and stopped on server stop |
 | `AudioTransferService` scheduled pool (2 daemon threads) | Bounded server audio reads and paced Minecraft chunk sends | Owned and stopped on server stop; at most two active transfers globally and per player |
 | `SpeakerAudioManager` fixed pool (2 daemon threads) | Client cache reads, transfer waits and integrity checks | Tasks are tracked and interrupted on stop/disconnect; requests have timeouts |
+| `WebRpcService` scheduled pool (4 daemon threads) | API dispatch, response chunk pacing and stale-request cleanup | Owned and stopped on server stop; at most four assembling requests per player |
+| `ClientWebServer` fixed pool (4 daemon threads) | Loopback static files and browser request waits | Starts on `/abs ui`; owned and stopped on client disconnect |
+| `WebRpcClient` single scheduled daemon thread | Request chunk pacing and timeout completion | Process-owned daemon; pending requests clear on client disconnect |
 | `FfmpegSupport` single daemon thread | Startup capability probe | Owned and stopped on server stop; external probes are time-bounded |
 | `LibraryCacheMaintenance` single daemon thread | Root-level orphan Ogg cleanup | Runs once after HTTP startup; owned and stopped before HTTP shutdown |
 | Minecraft server thread | Network packet callbacks queued through Architectury | Controller/speaker mutation occurs here |

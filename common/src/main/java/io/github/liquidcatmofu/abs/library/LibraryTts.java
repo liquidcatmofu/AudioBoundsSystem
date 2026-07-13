@@ -6,7 +6,7 @@ import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
 import io.github.liquidcatmofu.abs.io.AtomicFiles;
-import io.github.liquidcatmofu.abs.server.ABSHttpServer;
+import io.github.liquidcatmofu.abs.server.ServerAudioCache;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
 
 import java.io.IOException;
@@ -76,7 +76,7 @@ public final class LibraryTts {
 
         String id = UUID.randomUUID().toString();
         String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
-        Path cachePath = ABSHttpServer.getCacheDir().resolve(cacheFile);
+        Path cachePath = ServerAudioCache.getDirectory().resolve(cacheFile);
         Path metadataPath = dir.resolve(id + ".json");
         boolean committed = false;
         try {
@@ -128,7 +128,7 @@ public final class LibraryTts {
         String contentHash = AudioContent.sha256(ogg);
         String oldCacheFile = entry.cacheFile;
         String newCacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
-        Path cachePath = ABSHttpServer.getCacheDir().resolve(newCacheFile);
+        Path cachePath = ServerAudioCache.getDirectory().resolve(newCacheFile);
         AtomicFiles.write(cachePath, ogg);
 
         long durationTicks;
@@ -156,7 +156,7 @@ public final class LibraryTts {
             AtomicFiles.writeString(ttsDir(folderId).resolve(id + ".json"),
                     GSON.toJson(entry), StandardCharsets.UTF_8);
             if (oldCacheFile != null && !oldCacheFile.equals(newCacheFile)) {
-                Optional<Path> oldCachePath = ABSHttpServer.resolveCacheFile(oldCacheFile);
+                Optional<Path> oldCachePath = ServerAudioCache.resolve(oldCacheFile);
                 if (oldCachePath.isPresent()) Files.deleteIfExists(oldCachePath.get());
             }
             return entry;
@@ -187,7 +187,7 @@ public final class LibraryTts {
     }
 
     public static Optional<Path> cacheFilePath(TtsEntry entry) {
-        return entry == null ? Optional.empty() : ABSHttpServer.resolveCacheFile(entry.cacheFile);
+        return entry == null ? Optional.empty() : ServerAudioCache.resolve(entry.cacheFile);
     }
 
     /** 同一の合成入力を持ち、再利用可能なOggが存在するエントリを返す。 */

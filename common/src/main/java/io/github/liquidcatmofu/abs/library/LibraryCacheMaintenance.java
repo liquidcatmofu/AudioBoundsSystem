@@ -1,7 +1,7 @@
 package io.github.liquidcatmofu.abs.library;
 
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
-import io.github.liquidcatmofu.abs.server.ABSHttpServer;
+import io.github.liquidcatmofu.abs.server.ServerAudioCache;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,7 +22,7 @@ public final class LibraryCacheMaintenance {
 
     public static synchronized void start() {
         if (executor != null) return;
-        Path cacheRoot = ABSHttpServer.getCacheDir();
+        Path cacheRoot = ServerAudioCache.getDirectory();
         if (ABSLibrary.getRoot() == null || cacheRoot == null) return;
 
         long scanStartedAt = System.currentTimeMillis();

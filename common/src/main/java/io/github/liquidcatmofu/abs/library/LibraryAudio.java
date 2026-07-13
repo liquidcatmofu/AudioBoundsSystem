@@ -7,7 +7,7 @@ import io.github.liquidcatmofu.abs.audio.FfmpegTranscoder;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
 import io.github.liquidcatmofu.abs.io.AtomicFiles;
-import io.github.liquidcatmofu.abs.server.ABSHttpServer;
+import io.github.liquidcatmofu.abs.server.ServerAudioCache;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -76,7 +76,7 @@ public final class LibraryAudio {
         String contentHash = AudioContent.sha256(ogg);
         String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
         Path srcPath = dir.resolve(srcFile);
-        Path cachePath = ABSHttpServer.getCacheDir().resolve(cacheFile);
+        Path cachePath = ServerAudioCache.getDirectory().resolve(cacheFile);
         Path metadataPath = dir.resolve(id + ".json");
         boolean committed = false;
         try {
@@ -141,7 +141,7 @@ public final class LibraryAudio {
     }
 
     public static Optional<Path> cacheFilePath(AudioEntry entry) {
-        return entry == null ? Optional.empty() : ABSHttpServer.resolveCacheFile(entry.cacheFile);
+        return entry == null ? Optional.empty() : ServerAudioCache.resolve(entry.cacheFile);
     }
 
     private static Optional<Path> resolveDirectChild(Path directory, String fileName) {

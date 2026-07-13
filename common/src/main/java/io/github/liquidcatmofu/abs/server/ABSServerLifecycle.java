@@ -1,33 +1,33 @@
 package io.github.liquidcatmofu.abs.server;
 
 import dev.architectury.event.events.common.LifecycleEvent;
-import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.FfmpegSupport;
 import io.github.liquidcatmofu.abs.library.ABSLibrary;
 import io.github.liquidcatmofu.abs.library.LibraryCacheMaintenance;
 import io.github.liquidcatmofu.abs.server.web.WebSessionStore;
+import io.github.liquidcatmofu.abs.server.web.WebRpcService;
 import net.minecraft.world.level.storage.LevelResource;
-
-import java.io.IOException;
 
 public class ABSServerLifecycle {
     public static void register() {
         LifecycleEvent.SERVER_STARTING.register(server -> {
-            ABSLibrary.init(server.getWorldPath(LevelResource.ROOT));
+            var worldRoot = server.getWorldPath(LevelResource.ROOT);
+            ABSLibrary.init(worldRoot);
+            try {
+                ServerAudioCache.init(worldRoot);
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException("Failed to initialize ABS audio cache", e);
+            }
             FfmpegSupport.runStartupCheck();
             AudioTransferService.start();
-            try {
-                ABSHttpServer.start(server);
-            } catch (IOException e) {
-                AudioBoundsSystem.LOGGER.error("Failed to start ABS HTTP Server", e);
-            }
+            WebRpcService.start(server);
             LibraryCacheMaintenance.start();
         });
 
         LifecycleEvent.SERVER_STOPPING.register(server -> {
             LibraryCacheMaintenance.stop();
-            ABSHttpServer.stop();
             AudioTransferService.stop();
+            WebRpcService.stop();
             FfmpegSupport.stop();
             WebSessionStore.clear();
         });

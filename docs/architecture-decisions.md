@@ -116,7 +116,17 @@ Status: Accepted
 
 ABS must not require an additional publicly reachable TCP port for its default multiplayer setup. A play packet still carries a per-player one-time token and content hash, but a cache miss now redeems that token through a C2S custom payload. The server reads a bounded Ogg off-thread and returns ordered chunks of at most 30 KiB. The client rejects oversized, inconsistent, out-of-order or overflowing transfers, then applies the existing Ogg and SHA-256 validation before committing its disk cache.
 
-The chunk shape follows the proven CC:Tweaked upload design—transfer identity, declared total size, offset-bounded slices and final digest validation—but the implementation is original and specialized for ABS. At most two audio transfers run concurrently, with no player allowed to occupy more than those two slots. Chunks are emitted in eight-packet batches every 50 ms (about 4.8 MiB/s per transfer) instead of filling the network queue in one burst. The public `/audio` HTTP route is removed; the remaining server HTTP service is temporary until WebUI/API traffic is moved to a loopback client bridge over Minecraft RPC.
+The chunk shape follows the proven CC:Tweaked upload design—transfer identity, declared total size, offset-bounded slices and final digest validation—but the implementation is original and specialized for ABS. At most two audio transfers run concurrently, with no player allowed to occupy more than those two slots. Chunks are emitted in eight-packet batches every 50 ms (about 4.8 MiB/s per transfer) instead of filling the network queue in one burst. The public `/audio` HTTP route is removed.
+
+## ADR-017: The browser UI is loopback-only and inherits Minecraft identity
+
+Status: Accepted
+
+The dedicated server no longer starts an HTTP listener. `/abs ui` sends an authenticated game packet which starts a client-side HTTP server on `127.0.0.1` with an operating-system-assigned port. A random local token establishes an HttpOnly, SameSite browser cookie before static UI or API access is allowed. The listener stops on client disconnect.
+
+Browser API requests are split into 30 KiB Minecraft payloads with a request UUID, declared total length, ordered offsets and SHA-256. The server derives the player identity from the Minecraft connection, injects a short-lived internal Web session, and dispatches through the same `WebApiRouter` used by the former HTTP transport. Responses, including Ogg previews, use the same bounded and paced mechanism. Four assembling requests per player and a 120-second timeout bound abandoned work.
+
+The legacy `ABSHttpServer` implementation remains source-compatible for now but is not started by the lifecycle. Large uploads are initially assembled in bounded memory like the reviewed CC:Tweaked design; temporary-file streaming is the next hardening step.
 
 ## Open decisions
 

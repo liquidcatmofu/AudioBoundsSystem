@@ -14,6 +14,10 @@ public final class WebAuthHelper {
 
     private WebAuthHelper() {}
 
+    public static String sessionCookieHeader(UUID sessionToken) {
+        return SESSION_COOKIE + "=" + sessionToken;
+    }
+
     /** Cookie ヘッダーからセッショントークンを取り出す */
     public static Optional<UUID> extractSessionToken(HttpExchange exchange) {
         String cookieHeader = exchange.getRequestHeaders().getFirst("Cookie");
