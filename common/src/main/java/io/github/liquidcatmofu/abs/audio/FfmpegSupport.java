@@ -2,9 +2,14 @@ package io.github.liquidcatmofu.abs.audio;
 
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -22,6 +27,8 @@ public final class FfmpegSupport {
 
     private static volatile boolean ffmpegAvailable = false;
     private static volatile boolean vorbisEncoderAvailable = false;
+    private static ExecutorService executor;
+    private static CompletableFuture<Void> startupTask;
 
     private FfmpegSupport() {}
 
@@ -34,8 +41,30 @@ public final class FfmpegSupport {
     }
 
     /** 非同期で検査を開始する。 */
-    public static void runStartupCheck() {
-        CompletableFuture.runAsync(FfmpegSupport::check);
+    public static synchronized void runStartupCheck() {
+        if (startupTask != null && !startupTask.isDone()) {
+            return;
+        }
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "abs-ffmpeg-probe");
+                thread.setDaemon(true);
+                return thread;
+            });
+        }
+        startupTask = CompletableFuture.runAsync(FfmpegSupport::check, executor);
+    }
+
+    /** サーバー停止時に進行中の機能検査をキャンセルし、専用 Executor を終了する。 */
+    public static synchronized void stop() {
+        if (startupTask != null) {
+            startupTask.cancel(true);
+            startupTask = null;
+        }
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
+        }
     }
 
     private static void check() {
@@ -90,18 +119,39 @@ public final class FfmpegSupport {
 
     /** コマンドを実行し標準出力（+標準エラー）を返す。起動失敗・タイムアウト時は null。 */
     private static String capture(String... cmd) {
+        Path output = null;
+        Process process = null;
         try {
+            output = Files.createTempFile("abs-ffmpeg-probe-", ".log");
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
-            Process proc = pb.start();
-            byte[] out = proc.getInputStream().readAllBytes();   // waitFor 前に読み切りデッドロック回避
-            if (!proc.waitFor(15, TimeUnit.SECONDS)) {
-                proc.destroyForcibly();
+            pb.redirectOutput(output.toFile());
+            process = pb.start();
+            if (!process.waitFor(15, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(2, TimeUnit.SECONDS);
                 return null;
             }
-            return new String(out);
+            try (var input = Files.newInputStream(output)) {
+                return new String(input.readNBytes(4 * 1024 * 1024), StandardCharsets.UTF_8);
+            }
+        } catch (InterruptedException e) {
+            if (process != null) {
+                process.destroyForcibly();
+            }
+            Thread.currentThread().interrupt();
+            return null;
         } catch (Exception e) {
             return null;
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
+            if (output != null) {
+                try {
+                    Files.deleteIfExists(output);
+                } catch (Exception ignored) {}
+            }
         }
     }
 }

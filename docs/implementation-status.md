@@ -25,12 +25,12 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 | WebUI library configuration | Verified working | Handoff runtime report; CRUD routes and browser UI exist | `LibraryApiHandler`, `ABSLibrary`, `webui/app.js` | Several request bodies are unbounded; create operations use view access in some routes | Add validation and authorization tests before changing behavior |
 | TTS provider discovery | Implemented but untested | Five providers are registered and exposed through the bridge | `TTSAddon`, `TTSProviderRegistry`, `AddonTTSBridge` | Availability calls are synchronous and repeated; registry has no lifecycle reset | Add fake-provider tests and bounded probing |
 | VOICEVOX-compatible synthesis | Verified working | Handoff runtime report; `/audio_query` and `/synthesis` implementation exists | `VoiceVoxCompatibleProvider` | Blocking calls occupy an HTTP worker; response size is unbounded; coarse error types | Add transport seam, response limits, and error classification |
-| WAV-to-Ogg transcoding | Verified working | Handoff runtime report; ProcessBuilder implementation exists | `tts-addon.transcode.FfmpegTranscoder` | No timeout/cancellation; process output can be unbounded; cleanup may fail if process remains | Introduce a process runner and lifecycle tests |
+| WAV/audio-to-Ogg transcoding | Verified working | User confirmed operation after Core/TTS consolidation on 2026-07-13 | `audio.FfmpegTranscoder`, `tts-addon.transcode.FfmpegTranscoder` | 90-second timeout is fixed; automated external-process coverage remains | Add a process-runner test seam |
 | TTS library registration | Verified working | Handoff runtime report; Ogg and JSON metadata are written | `LibraryTts`, `TtsEntry` | Direct non-atomic writes; no content validation or deduplication | Add atomic write and corruption tests |
 | Audio upload and library storage | Implemented but untested | Upload/transcode and JSON metadata paths exist | `LibraryAudio`, `ABSLibrary`, `FfmpegTranscoder` | Upload is fully read before the 64 MiB check; no capacity policy | Stream with an enforced limit and add temporary-directory tests |
 | Core/Add-on boundary | Implemented but untested | TTS addon implements the Core-owned bridge interface | `TTSBridge`, `TTSBridgeRegistry`, `AddonTTSBridge` | Synchronous byte-array API hides cancellation and typed failures; no compatibility version | Document v1 contract, then add compatible adapters only as needed |
 | One-time audio delivery | Implemented but untested | Per-player tokens are generated and consumed once | `TokenStore`, `AudioRequestHandler`, `ABSHttpServer` | Full-file memory reads; token path is not constrained to cache root | Add expiry/single-use/path-validation tests |
-| Client download and playback | Verified working | Handoff runtime report; dynamic sound store and mixin exist | `SpeakerAudioManager`, `ABSDynamicSoundStore`, `SoundBufferLibraryMixin` | URL is hard-coded to `localhost:25566`; no timeout/cancellation; common-pool tasks are unmanaged | Fix server endpoint derivation without changing packet compatibility |
+| Client download and playback | Implemented but untested | Handoff runtime report for the original localhost path; remote-host derivation has unit coverage | `SpeakerAudioManager`, `ABSDynamicSoundStore`, `SoundBufferLibraryMixin` | Fixed HTTP port still assumes direct connectivity; runtime remote-client test remains | Verify dedicated/integrated server playback manually |
 | Fixed speaker bounds audio | Implemented but untested | Tickable sound reads speaker bounds and computes volume | `ABSSpeakerSoundInstance`, `AudioBounds`, `FalloffCurve` | Uses `Attenuation.NONE`; no configured outer falloff width; some curves do not match the original formulas | Add pure geometry/curve tests and reconcile semantics in an ADR |
 | Moving 3D source | Missing | No entity-following sound implementation | — | Original specification is not fulfilled | Keep out of the stabilization milestones |
 | 2D/UI playback | Missing | No separate 2D playback API or sound instance | — | Original specification is not fulfilled | Keep out of the stabilization milestones |
@@ -39,11 +39,11 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 | Speaker/controller TOML | Partial | Comment-preserving save/load helpers exist | `SpeakerTomlConfig`, `AudioControllerTomlConfig` | Load helpers have no callers; NBT is currently the effective restore path | Decide whether TOML is authoritative or export-only and test that decision |
 | TTS configuration | Stub | In-memory defaults and URL lookup exist | `TTSConfig` | No disk/WebUI integration; no validation | Preserve defaults and add a versioned config loader later |
 | TTS cache | Partial | A command-side cache helper exists | `TTSAudioCache` | WebUI path bypasses it; legacy key omits engine and tuning parameters; no atomic writes/eviction | Add a deterministic full-request key and integrate after regression tests |
-| Server lifecycle | Partial | HTTP server and sessions stop on server stopping | `ABSServerLifecycle`, `ABSHttpServer` | HTTP executor is not retained/shut down; bridge/providers have no shutdown hook | Add owned executors and idempotent lifecycle tests |
-| Client lifecycle | Partial | Active sound/subtitle state clears on player quit | `AudioBoundsSystemClient`, `SpeakerAudioManager` | In-flight downloads are not cancelled; HTTP clients are recreated | Own downloads/client and cancel them on disconnect |
+| Server lifecycle | Implemented but untested | HTTP and ffmpeg-probe executors are owned and stopped on server stopping | `ABSServerLifecycle`, `ABSHttpServer`, `FfmpegSupport` | Requires runtime stop/restart verification; provider bridge has no shutdown hook | Add lifecycle integration tests |
+| Client lifecycle | Implemented but untested | Active sound/subtitle state and in-flight download tasks clear on player quit | `AudioBoundsSystemClient`, `SpeakerAudioManager` | Download executor lives for the client process, although its threads are daemon threads | Add disconnect-during-download integration test |
 | Authorization | Partial | Sessions, folder access, and speaker owner checks exist | `WebSessionStore`, `ABSLibrary`, `ABSNetwork` | Controller save/test/stop packets lack owner/OP checks | Add permission tests and enforce a controller policy |
 | Error handling | Partial | Failures are caught at HTTP/provider boundaries | Multiple | Most errors collapse to HTTP 502 or null; diagnostic playback logs use WARN | Add typed failures and rate-limited/user-facing diagnostics |
-| Automated tests | Partial | 10 pure-Java bridge/cache/bounds tests pass | `AddonTTSBridgeTest`, `TTSAudioCacheTest`, `AudioBoundsTest` | HTTP, registration, playback, lifecycle and loader paths remain uncovered | Continue Milestone 1 |
+| Automated tests | Partial | 13 pure-Java bridge/cache/bounds/endpoint tests pass | `AddonTTSBridgeTest`, `TTSAudioCacheTest`, `AudioBoundsTest`, `SpeakerAudioManagerTest` | HTTP transfer, registration, playback, lifecycle and loader paths remain uncovered | Continue stabilization regression coverage |
 | CI | Missing | No `.github/workflows` files | — | Regressions are not automatically detected | Add after local tests are stable |
 
 ## Storage locations
@@ -59,10 +59,11 @@ Status terms follow `handoff_v2/02_ABS_codex_implementation_addendum.md`.
 
 | Owner | Work | Current lifecycle |
 |---|---|---|
-| `ABSHttpServer` fixed pool (8 threads) | WebUI/API, synthesis call, file reads/writes | Executor is not retained or explicitly shut down |
-| `CompletableFuture` common pool | Client audio HTTP fetch | Futures are not tracked or cancelled |
+| `ABSHttpServer` fixed pool (8 daemon threads) | WebUI/API, synthesis call, file reads/writes | Owned; graceful shutdown then forced shutdown on server stop |
+| `SpeakerAudioManager` fixed pool (2 daemon threads) | Client audio HTTP fetch | Tasks are tracked and interrupted on stop/disconnect; requests have timeouts |
+| `FfmpegSupport` single daemon thread | Startup capability probe | Owned and stopped on server stop; external probes are time-bounded |
 | Minecraft server thread | Network packet callbacks queued through Architectury | Controller/speaker mutation occurs here |
-| External ffmpeg process | WAV-to-Ogg conversion | Waits indefinitely; no cancellation/forced termination |
+| External ffmpeg process | WAV-to-Ogg conversion | 90-second timeout with graceful then forced termination |
 
 ## TODO/FIXME and hidden stubs
 

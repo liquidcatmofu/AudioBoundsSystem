@@ -30,6 +30,12 @@ Status: Accepted
 
 Fabric compatibility is preserved, but release readiness is evaluated first on Forge 1.20.1 with a Java 17 runtime. Builds performed with a newer host JDK do not satisfy that gate by themselves.
 
+## ADR-006: Core owns generic FFmpeg process execution
+
+Status: Accepted
+
+Audio transcoding is useful without TTS because ABS Core supports uploaded audio files. The generic ffmpeg execution, timeout, process termination, diagnostic limit and temporary-file cleanup therefore live in Core. The TTS addon retains its existing `tts.transcode.FfmpegTranscoder` entry point as a compatibility adapter and passes its configured ffmpeg path to the Core service. Provider-specific synthesis remains in the addon.
+
 ## Open decisions
 
 ### TOML authority
@@ -42,5 +48,6 @@ Current code attenuates from the source center to the boundary. The original spe
 
 ### Remote audio endpoint
 
-The client currently downloads from localhost. The replacement must support dedicated servers, integrated servers, proxies and configurable HTTP ports without leaking bearer tokens or breaking old packets.
+Status: Partially resolved
 
+The client now derives the HTTP hostname from the active Minecraft connection and falls back to localhost for an integrated/local connection. This preserves the existing play packet. The fixed port still needs a compatibility design for proxies, NAT and configurable HTTP ports.

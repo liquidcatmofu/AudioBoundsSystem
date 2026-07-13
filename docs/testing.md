@@ -29,10 +29,10 @@ rtk ./gradlew test
 
 Result: `BUILD SUCCESSFUL in 7s` after correcting one initially mistyped legacy-key expectation in the new test.
 
-- `common`: 4 bounds/curve tests passed.
+- `common`: 7 bounds/curve/endpoint tests passed.
 - `tts-addon`: 6 bridge/cache-key tests passed.
 - Loader modules: `NO-SOURCE` (no loader-specific tests yet).
-- Total new tests: 10.
+- Total tests: 13.
 
 Covered behavior:
 
@@ -42,6 +42,27 @@ Covered behavior:
 - Engine, speaker, text and tuning parameters all affect the full cache key.
 - Existing legacy command-cache key remains unchanged.
 - All four bounds shapes and all four current attenuation curves.
+- Dedicated-server hostname, IPv6 and integrated-server audio endpoint generation.
+
+Milestone 2 test run:
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 12s
+
+rtk ./gradlew :common:test
+BUILD SUCCESSFUL in 9s
+```
+
+The second run includes the three endpoint tests added after the full test run.
+
+Final verification after all lifecycle/timeout changes:
+
+```text
+rtk ./gradlew build
+BUILD SUCCESSFUL in 1m 10s
+53 actionable tasks: 17 executed, 36 up-to-date
+```
 
 Final verification after the test and cache-key changes:
 
@@ -100,3 +121,20 @@ These tests may require a dedicated test source set or GameTest and must not mak
 - ffmpeg integration test
 - Remote client audio download
 - Sound Physics Remastered compatibility
+
+## Transcoder consolidation
+
+The TTS-side `FfmpegTranscoder` is now a compatibility adapter over the Core generic transcoder. Compilation and the full multi-module build verify the dependency and packaged class linkage; an actual ffmpeg upload/TTS conversion remains a manual integration test.
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 20s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 1m 7s
+53 actionable tasks: 22 executed, 31 up-to-date
+```
+
+The Forge and Fabric addon metadata both declare `abs` as a required dependency. The packaged TTS addon retains its adapter class and resolves the generic transcoder from the required Core mod at runtime.
+
+Manual result: the user confirmed successful operation after the Core/TTS transcoder consolidation on 2026-07-13. Exact loader, server topology and failure scenarios were not recorded, so those broader acceptance cases remain open.

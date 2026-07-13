@@ -36,7 +36,7 @@ public class ABSSpeakerSoundInstance extends AbstractSoundInstance implements Ti
     @Override
     public WeighedSoundEvents resolve(SoundManager soundManager) {
         ResourceLocation soundId = toSoundId(dynamicResourceLoc);
-        AudioBoundsSystem.LOGGER.warn("ABS [DIAG] resolve: soundId={} path={}", soundId, "abs:sounds/" + soundId.getPath() + ".ogg");
+        AudioBoundsSystem.LOGGER.debug("ABS [DIAG] resolve: soundId={} path={}", soundId, "abs:sounds/" + soundId.getPath() + ".ogg");
         this.sound = new Sound(
                 soundId.toString(),
                 ConstantFloat.of(1.0F),

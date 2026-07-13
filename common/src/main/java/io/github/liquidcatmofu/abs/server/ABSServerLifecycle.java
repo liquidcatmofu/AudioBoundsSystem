@@ -23,6 +23,7 @@ public class ABSServerLifecycle {
 
         LifecycleEvent.SERVER_STOPPING.register(server -> {
             ABSHttpServer.stop();
+            FfmpegSupport.stop();
             WebSessionStore.clear();
         });
     }

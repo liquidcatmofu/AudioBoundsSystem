@@ -16,40 +16,71 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ABSHttpServer {
     public static final int DEFAULT_PORT = 25566;
 
-    private static HttpServer server;
+    private static volatile HttpServer server;
+    private static ExecutorService executor;
     private static Path cacheDir;
 
-    public static void start(MinecraftServer mcServer) throws IOException {
+    public static synchronized void start(MinecraftServer mcServer) throws IOException {
         if (server != null) return;
 
         cacheDir = mcServer.getWorldPath(LevelResource.ROOT).resolve("abs_cache");
         Files.createDirectories(cacheDir);
 
-        server = HttpServer.create(new InetSocketAddress(DEFAULT_PORT), 0);
-        server.createContext("/audio",       new AudioRequestHandler());
-        server.createContext("/api/auth",    new AuthApiHandler());
-        server.createContext("/api/me",      new MeApiHandler(mcServer));
-        server.createContext("/api/tts",     new TtsApiHandler());
-        server.createContext("/api/library", new LibraryApiHandler(mcServer));
-        server.createContext("/api/blocks",  new BlockConfigApiHandler(mcServer));
-        server.createContext("/ui",          new WebUIHandler());
-        server.setExecutor(Executors.newFixedThreadPool(8));
-        server.start();
+        HttpServer newServer = HttpServer.create(new InetSocketAddress(DEFAULT_PORT), 0);
+        ExecutorService newExecutor = Executors.newFixedThreadPool(8, new AbsHttpThreadFactory());
+        try {
+            newServer.createContext("/audio",       new AudioRequestHandler());
+            newServer.createContext("/api/auth",    new AuthApiHandler());
+            newServer.createContext("/api/me",      new MeApiHandler(mcServer));
+            newServer.createContext("/api/tts",     new TtsApiHandler());
+            newServer.createContext("/api/library", new LibraryApiHandler(mcServer));
+            newServer.createContext("/api/blocks",  new BlockConfigApiHandler(mcServer));
+            newServer.createContext("/ui",          new WebUIHandler());
+            newServer.setExecutor(newExecutor);
+            newServer.start();
+            server = newServer;
+            executor = newExecutor;
+        } catch (RuntimeException e) {
+            newServer.stop(0);
+            newExecutor.shutdownNow();
+            throw e;
+        }
 
         AudioBoundsSystem.LOGGER.info("ABS HTTP Server started on port {}", DEFAULT_PORT);
     }
 
-    public static void stop() {
-        if (server == null) return;
-        server.stop(1);
+    public static synchronized void stop() {
+        HttpServer runningServer = server;
+        ExecutorService runningExecutor = executor;
         server = null;
+        executor = null;
+
+        if (runningServer != null) {
+            runningServer.stop(1);
+        }
+        if (runningExecutor != null) {
+            runningExecutor.shutdown();
+            try {
+                if (!runningExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    runningExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                runningExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
         TokenStore.clear();
-        AudioBoundsSystem.LOGGER.info("ABS HTTP Server stopped");
+        if (runningServer != null || runningExecutor != null) {
+            AudioBoundsSystem.LOGGER.info("ABS HTTP Server stopped");
+        }
     }
 
     /** Ogg ファイルに対するワンタイムトークンを発行する */
@@ -64,5 +95,16 @@ public class ABSHttpServer {
 
     public static boolean isRunning() {
         return server != null;
+    }
+
+    private static final class AbsHttpThreadFactory implements java.util.concurrent.ThreadFactory {
+        private final AtomicInteger sequence = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable task) {
+            Thread thread = new Thread(task, "abs-http-" + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }
