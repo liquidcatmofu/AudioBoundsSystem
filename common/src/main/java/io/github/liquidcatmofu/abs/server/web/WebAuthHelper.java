@@ -10,6 +10,7 @@ import java.util.UUID;
 
 public final class WebAuthHelper {
     private static final String SESSION_COOKIE = "abs_session";
+    public static final String CSRF_HEADER = "X-ABS-CSRF";
 
     private WebAuthHelper() {}
 
@@ -33,6 +34,23 @@ public final class WebAuthHelper {
         String cookie = SESSION_COOKIE + "=" + sessionToken
                 + "; HttpOnly; Path=/; Max-Age=28800; SameSite=Strict";
         exchange.getResponseHeaders().set("Set-Cookie", cookie);
+    }
+
+    /** 更新系APIでは、ブラウザがクロスサイトフォームから付与できない専用ヘッダーを要求する。 */
+    public static boolean validateMutationHeader(HttpExchange exchange) throws IOException {
+        if (isMutationHeaderValid(exchange.getRequestMethod(),
+                exchange.getRequestHeaders().getFirst(CSRF_HEADER))) {
+            return true;
+        }
+        sendError(exchange, 403, "Missing or invalid CSRF header");
+        return false;
+    }
+
+    static boolean isMutationHeaderValid(String method, String headerValue) {
+        if ("GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method)) {
+            return true;
+        }
+        return "1".equals(headerValue);
     }
 
     /** JSON レスポンスを送信する */

@@ -3,10 +3,13 @@ package io.github.liquidcatmofu.abs.tts;
 import io.github.liquidcatmofu.abs.tts.api.TTSProvider;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSBridge;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSEngine;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSParam;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** common の {@link TTSBridge} を tts-addon の {@link TTSProviderRegistry} で実装する。 */
 public class AddonTTSBridge implements TTSBridge {
@@ -40,11 +43,49 @@ public class AddonTTSBridge implements TTSBridge {
 
     @Override
     public byte[] synthesize(TTSSynthesisRequest request) throws Exception {
+        if (request == null || request.engineId == null) {
+            throw new IllegalArgumentException("TTS request and engineId are required");
+        }
         TTSProvider provider = findProvider(request.engineId);
         if (provider == null) {
             throw new IllegalArgumentException("Unknown TTS engine: " + request.engineId);
         }
+        validateRequest(provider, request);
         return provider.synthesizeToOgg(request.text, request.speakerId, request.params);
+    }
+
+    private void validateRequest(TTSProvider provider, TTSSynthesisRequest request) {
+        if (request.speakerId == null || request.speakerId.isBlank()) {
+            throw new IllegalArgumentException("speakerId must not be blank");
+        }
+        if (request.text == null || request.text.isBlank()) {
+            throw new IllegalArgumentException("text must not be blank");
+        }
+        if (request.text.length() > 10_000) {
+            throw new IllegalArgumentException("text exceeds 10000 characters");
+        }
+        if (request.params == null) {
+            request.params = new HashMap<>();
+            return;
+        }
+        if (request.params.size() > 32) {
+            throw new IllegalArgumentException("too many TTS parameters");
+        }
+
+        Map<String, TTSParam> schema = new HashMap<>();
+        for (TTSParam param : provider.paramSchema()) {
+            schema.put(param.key, param);
+        }
+        for (Map.Entry<String, Double> entry : request.params.entrySet()) {
+            TTSParam param = schema.get(entry.getKey());
+            if (param == null) {
+                throw new IllegalArgumentException("Unsupported TTS parameter: " + entry.getKey());
+            }
+            Double value = entry.getValue();
+            if (value == null || !Double.isFinite(value) || value < param.min || value > param.max) {
+                throw new IllegalArgumentException("TTS parameter out of range: " + entry.getKey());
+            }
+        }
     }
 
     private TTSProvider findProvider(String id) {

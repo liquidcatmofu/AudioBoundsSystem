@@ -4,7 +4,6 @@ import com.electronwill.nightconfig.core.file.CommentedFileConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
@@ -25,8 +24,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -66,6 +63,9 @@ public class BlockConfigApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 403, "OP 権限が必要です");
             return;
         }
+        if (!WebAuthHelper.validateMutationHeader(exchange)) {
+            return;
+        }
 
         String method = exchange.getRequestMethod();
         String path   = exchange.getRequestURI().getPath();
@@ -95,6 +95,8 @@ public class BlockConfigApiHandler implements HttpHandler {
                 }
                 default -> WebAuthHelper.sendError(exchange, 404, "Not Found");
             }
+        } catch (RequestBodyReader.PayloadTooLargeException e) {
+            WebAuthHelper.sendError(exchange, 413, "Request body too large");
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: BlockConfigApiHandler error", e);
             WebAuthHelper.sendError(exchange, 500, "Internal Server Error");
@@ -443,10 +445,12 @@ public class BlockConfigApiHandler implements HttpHandler {
         return player != null && server.getPlayerList().isOp(player.getGameProfile());
     }
 
-    private static JsonObject readJson(HttpExchange exchange) {
-        try (InputStream is = exchange.getRequestBody()) {
-            return JsonParser.parseString(new String(is.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
-        } catch (Exception e) {
+    private static JsonObject readJson(HttpExchange exchange) throws IOException {
+        try {
+            return RequestBodyReader.readJson(exchange);
+        } catch (RequestBodyReader.PayloadTooLargeException e) {
+            throw e;
+        } catch (RuntimeException e) {
             return null;
         }
     }

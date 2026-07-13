@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class AudioControllerBlockEntity extends BlockEntity {
     private static final String KEY_CONTROLLER_ID       = "ControllerId";
@@ -36,6 +37,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
     private static final String KEY_QUEUE_DISPLAY_NAMES  = "QueueDisplayNames";
     private static final String KEY_REDSTONE_MODE        = "RedstoneMode";
     private static final String KEY_RETRIGGER_MODE       = "RetriggerMode";
+    private static final String KEY_OWNER_UUID           = "OwnerUuid";
 
     private String controllerId = "";
     private List<BlockPos> targetSpeakerOffsets = List.of();
@@ -43,6 +45,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
     private Map<Integer, List<String>> queueDisplayNames  = Map.of();
     private RedstoneMode redstoneMode = RedstoneMode.PULSE;
     private ControllerRetriggerMode retriggerMode = ControllerRetriggerMode.RESTART;
+    private UUID ownerUuid;
     private int lastRedstoneSignal;
     private boolean needsInitialRedstoneSync = true;
     private boolean tomlLoaded;
@@ -79,6 +82,15 @@ public class AudioControllerBlockEntity extends BlockEntity {
 
     public ControllerRetriggerMode getRetriggerMode() {
         return retriggerMode;
+    }
+
+    public UUID getOwnerUuid() {
+        return ownerUuid;
+    }
+
+    public void setOwnerUuid(UUID ownerUuid) {
+        this.ownerUuid = ownerUuid;
+        setChanged();
     }
 
     public void applyLoadedConfig(
@@ -301,6 +313,9 @@ public class AudioControllerBlockEntity extends BlockEntity {
         tag.put(KEY_REDSTONE_QUEUES, writeRedstoneQueues());
         tag.putString(KEY_REDSTONE_MODE, redstoneMode.name());
         tag.putString(KEY_RETRIGGER_MODE, retriggerMode.name());
+        if (ownerUuid != null) {
+            tag.putUUID(KEY_OWNER_UUID, ownerUuid);
+        }
     }
 
     @Override
@@ -312,6 +327,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
         queueDisplayNames   = readQueueDisplayNames(tag.getCompound(KEY_QUEUE_DISPLAY_NAMES));
         redstoneMode        = RedstoneMode.fromString(tag.getString(KEY_REDSTONE_MODE));
         retriggerMode       = ControllerRetriggerMode.fromString(tag.getString(KEY_RETRIGGER_MODE));
+        ownerUuid           = tag.hasUUID(KEY_OWNER_UUID) ? tag.getUUID(KEY_OWNER_UUID) : null;
     }
 
     @Override

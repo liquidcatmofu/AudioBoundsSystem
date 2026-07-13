@@ -3,7 +3,6 @@ package io.github.liquidcatmofu.abs.server.web;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
@@ -21,7 +20,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -35,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 
 /**
  * /api/library/* — ネスト対応フォルダ CRUD（フラットストア + parentId）
@@ -48,7 +47,10 @@ import java.util.UUID;
  */
 public class LibraryApiHandler implements HttpHandler {
     private static final Gson GSON = new GsonBuilder().create();
+    private static final int MAX_TTS_TEXT_CHARS = 10_000;
+    private static final int MAX_CONCURRENT_SYNTHESES = 2;
     private final MinecraftServer server;
+    private final Semaphore synthesisSlots = new Semaphore(MAX_CONCURRENT_SYNTHESES);
 
     public LibraryApiHandler(MinecraftServer server) {
         this.server = server;
@@ -60,6 +62,9 @@ public class LibraryApiHandler implements HttpHandler {
                 .flatMap(WebSessionStore::getPlayerUuid).orElse(null);
         if (playerUuid == null) {
             WebAuthHelper.sendError(exchange, 401, "Unauthorized");
+            return;
+        }
+        if (!WebAuthHelper.validateMutationHeader(exchange)) {
             return;
         }
         boolean isOp = isOp(playerUuid);
@@ -91,6 +96,8 @@ public class LibraryApiHandler implements HttpHandler {
             } else {
                 WebAuthHelper.sendError(exchange, 404, "Not Found");
             }
+        } catch (RequestBodyReader.PayloadTooLargeException e) {
+            WebAuthHelper.sendError(exchange, 413, "Request body too large");
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: LibraryApiHandler error", e);
             WebAuthHelper.sendError(exchange, 500, "Internal Server Error");
@@ -219,7 +226,8 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 404, "Folder not found");
             return;
         }
-        if (!ABSLibrary.access(folder, playerUuid, isOp).canView()) {
+        FolderAccess access = ABSLibrary.access(folder, playerUuid, isOp);
+        if (!access.canView()) {
             WebAuthHelper.sendError(exchange, 403, "Forbidden");
             return;
         }
@@ -230,19 +238,19 @@ public class LibraryApiHandler implements HttpHandler {
             if ("GET".equals(method)) {
                 WebAuthHelper.sendJson(exchange, 200, GSON.toJson(LibraryAudio.list(folderId)));
             } else if ("POST".equals(method)) {
+                if (!access.canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can upload audio");
+                    return;
+                }
                 String rawName = exchange.getRequestHeaders().getFirst("X-Filename");
                 if (rawName == null || rawName.isBlank()) {
                     WebAuthHelper.sendError(exchange, 400, "Missing X-Filename header");
                     return;
                 }
                 String filename = URLDecoder.decode(rawName, StandardCharsets.UTF_8);
-                byte[] data = exchange.getRequestBody().readAllBytes();
+                byte[] data = RequestBodyReader.readBytes(exchange, MAX_UPLOAD_BYTES);
                 if (data.length == 0) {
                     WebAuthHelper.sendError(exchange, 400, "Empty upload");
-                    return;
-                }
-                if (data.length > MAX_UPLOAD_BYTES) {
-                    WebAuthHelper.sendError(exchange, 413, "File too large (max 64MB)");
                     return;
                 }
                 try {
@@ -271,6 +279,10 @@ public class LibraryApiHandler implements HttpHandler {
                 if (entry == null) WebAuthHelper.sendError(exchange, 404, "Audio not found");
                 else WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
             } else if ("DELETE".equals(method)) {
+                if (!access.canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can delete audio");
+                    return;
+                }
                 boolean ok = LibraryAudio.delete(folderId, audioId);
                 if (ok) WebAuthHelper.sendJson(exchange, 200, "{\"deleted\":true}");
                 else WebAuthHelper.sendError(exchange, 404, "Audio not found");
@@ -301,7 +313,8 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 404, "Folder not found");
             return;
         }
-        if (!ABSLibrary.access(folder, playerUuid, isOp).canView()) {
+        FolderAccess access = ABSLibrary.access(folder, playerUuid, isOp);
+        if (!access.canView()) {
             WebAuthHelper.sendError(exchange, 403, "Forbidden");
             return;
         }
@@ -311,6 +324,10 @@ public class LibraryApiHandler implements HttpHandler {
             if ("GET".equals(method)) {
                 WebAuthHelper.sendJson(exchange, 200, GSON.toJson(LibraryTts.list(folderId)));
             } else if ("POST".equals(method)) {
+                if (!access.canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can create TTS entries");
+                    return;
+                }
                 synthesizeTts(exchange, folderId, playerUuid);
             } else {
                 WebAuthHelper.sendError(exchange, 405, "Method Not Allowed");
@@ -369,6 +386,10 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 400, "text must not be empty");
             return;
         }
+        if (text.length() > MAX_TTS_TEXT_CHARS) {
+            WebAuthHelper.sendError(exchange, 413, "text is too long (max " + MAX_TTS_TEXT_CHARS + " characters)");
+            return;
+        }
 
         TTSSynthesisRequest req = new TTSSynthesisRequest();
         req.engineId = body.get("engineId").getAsString();
@@ -384,13 +405,20 @@ public class LibraryApiHandler implements HttpHandler {
         String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
         String speakerName = body.has("speakerName") ? body.get("speakerName").getAsString() : null;
 
+        if (!acquireSynthesisSlot(exchange)) {
+            return;
+        }
         try {
             byte[] ogg = bridge.synthesize(req);
             TtsEntry entry = LibraryTts.create(folderId, displayName, req, speakerName, ogg, playerUuid);
             WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
+        } catch (IllegalArgumentException e) {
+            WebAuthHelper.sendError(exchange, 400, e.getMessage());
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: TTS synthesis failed", e);
             WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
+        } finally {
+            synthesisSlots.release();
         }
     }
 
@@ -410,6 +438,10 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 400, "text must not be empty");
             return;
         }
+        if (text.length() > MAX_TTS_TEXT_CHARS) {
+            WebAuthHelper.sendError(exchange, 413, "text is too long (max " + MAX_TTS_TEXT_CHARS + " characters)");
+            return;
+        }
 
         TTSSynthesisRequest req = new TTSSynthesisRequest();
         req.engineId = body.get("engineId").getAsString();
@@ -423,13 +455,20 @@ public class LibraryApiHandler implements HttpHandler {
         String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;
         String speakerName = body.has("speakerName") ? body.get("speakerName").getAsString() : null;
 
+        if (!acquireSynthesisSlot(exchange)) {
+            return;
+        }
         try {
             byte[] ogg = bridge.synthesize(req);
             TtsEntry entry = LibraryTts.update(folderId, ttsId, displayName, req, speakerName, ogg);
             WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
+        } catch (IllegalArgumentException e) {
+            WebAuthHelper.sendError(exchange, 400, e.getMessage());
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: TTS re-synthesis failed", e);
             WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
+        } finally {
+            synthesisSlots.release();
         }
     }
 
@@ -447,12 +486,23 @@ public class LibraryApiHandler implements HttpHandler {
         }
     }
 
-    private JsonObject readJson(HttpExchange exchange) {
-        try (InputStream is = exchange.getRequestBody()) {
-            return JsonParser.parseString(new String(is.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
-        } catch (Exception e) {
+    private JsonObject readJson(HttpExchange exchange) throws IOException {
+        try {
+            return RequestBodyReader.readJson(exchange);
+        } catch (RequestBodyReader.PayloadTooLargeException e) {
+            throw e;
+        } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private boolean acquireSynthesisSlot(HttpExchange exchange) throws IOException {
+        if (synthesisSlots.tryAcquire()) {
+            return true;
+        }
+        exchange.getResponseHeaders().set("Retry-After", "2");
+        WebAuthHelper.sendError(exchange, 429, "Too many concurrent TTS synthesis requests");
+        return false;
     }
 
     private boolean isOp(UUID playerUuid) {
@@ -479,6 +529,10 @@ public class LibraryApiHandler implements HttpHandler {
             if ("GET".equals(method)) {
                 WebAuthHelper.sendJson(exchange, 200, GSON.toJson(LibrarySequence.list(folderId)));
             } else if ("POST".equals(method)) {
+                if (!ABSLibrary.access(folder, playerUuid, isOp).canManage()) {
+                    WebAuthHelper.sendError(exchange, 403, "Only the owner can create sequences");
+                    return;
+                }
                 JsonObject body = readJson(exchange);
                 if (body == null) { WebAuthHelper.sendError(exchange, 400, "Invalid JSON"); return; }
                 String displayName = body.has("displayName") ? body.get("displayName").getAsString() : null;

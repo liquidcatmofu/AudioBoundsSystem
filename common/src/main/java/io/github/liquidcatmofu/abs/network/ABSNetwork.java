@@ -41,6 +41,10 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class ABSNetwork {
+    private static final int MAX_CONTROLLER_TARGETS = 256;
+    private static final int MAX_CONTROLLER_QUEUES = 15;
+    private static final int MAX_QUEUE_ENTRIES = 256;
+    private static final double MAX_CONFIG_DISTANCE_SQR = 64.0;
     public static final ResourceLocation PLAY_AUDIO = new ResourceLocation("abs", "play_audio");
     public static final ResourceLocation STOP_AUDIO = new ResourceLocation("abs", "stop_audio");
     public static final ResourceLocation SAVE_SPEAKER_CONFIG = new ResourceLocation("abs", "save_speaker_config");
@@ -102,16 +106,19 @@ public final class ABSNetwork {
             ControllerRetriggerMode retriggerMode = buf.readEnum(ControllerRetriggerMode.class);
 
             int targetCount = buf.readVarInt();
+            if (targetCount < 0 || targetCount > MAX_CONTROLLER_TARGETS) return;
             List<BlockPos> targetOffsets = new ArrayList<>(targetCount);
             for (int i = 0; i < targetCount; i++) {
                 targetOffsets.add(new BlockPos(buf.readInt(), buf.readInt(), buf.readInt()));
             }
 
             int queueCount = buf.readVarInt();
+            if (queueCount < 0 || queueCount > MAX_CONTROLLER_QUEUES) return;
             Map<Integer, List<String>> queues = new HashMap<>();
             for (int i = 0; i < queueCount; i++) {
                 int signal = buf.readVarInt();
                 int entryCount = buf.readVarInt();
+                if (signal < 1 || signal > 15 || entryCount < 0 || entryCount > MAX_QUEUE_ENTRIES) return;
                 List<String> queue = new ArrayList<>(entryCount);
                 for (int j = 0; j < entryCount; j++) {
                     queue.add(buf.readUtf(256));
@@ -125,6 +132,10 @@ public final class ABSNetwork {
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
                 if (!(blockEntity instanceof AudioControllerBlockEntity controller)) return;
+                if (!canModifyController(player, controller, pos)) return;
+                if (controller.getOwnerUuid() == null) {
+                    controller.setOwnerUuid(player.getUUID());
+                }
 
                 controller.applyLoadedConfig(controllerId, targetOffsets, queues, redstoneMode, retriggerMode);
                 AudioControllerTomlConfig.save(player.level(), controller);
@@ -143,6 +154,7 @@ public final class ABSNetwork {
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
                 if (!(blockEntity instanceof AudioControllerBlockEntity controller)) return;
+                if (!canModifyController(player, controller, pos)) return;
 
                 controller.triggerSignal(serverLevel, signal);
             });
@@ -157,6 +169,7 @@ public final class ABSNetwork {
 
                 BlockEntity blockEntity = player.level().getBlockEntity(pos);
                 if (!(blockEntity instanceof AudioControllerBlockEntity controller)) return;
+                if (!canModifyController(player, controller, pos)) return;
 
                 controller.stopPlayback(serverLevel);
             });
@@ -281,6 +294,20 @@ public final class ABSNetwork {
         UUID owner = speaker.getOwnerUuid();
         if (owner == null) return true;
         if (owner.equals(player.getUUID())) return true;
+        if (player instanceof ServerPlayer sp) {
+            return sp.getServer().getPlayerList().isOp(sp.getGameProfile());
+        }
+        return false;
+    }
+
+    /** コントローラーの所有者またはOPで、対象ブロックの近くにいる場合のみ操作可能。 */
+    private static boolean canModifyController(Player player, AudioControllerBlockEntity controller, BlockPos pos) {
+        if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5)
+                > MAX_CONFIG_DISTANCE_SQR) {
+            return false;
+        }
+        UUID owner = controller.getOwnerUuid();
+        if (owner == null || owner.equals(player.getUUID())) return true;
         if (player instanceof ServerPlayer sp) {
             return sp.getServer().getPlayerList().isOp(sp.getGameProfile());
         }

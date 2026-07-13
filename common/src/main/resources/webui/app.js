@@ -9,6 +9,7 @@ let settingsOpen = false;
 // ── API ────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) opts.headers['X-ABS-CSRF'] = '1';
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch('/api' + path, opts);
   if (res.status === 401) { showError('セッションが切れています。ゲーム内で /abs ui を再実行してください。'); return null; }
@@ -230,7 +231,7 @@ async function uploadAudio(file) {
   try {
     const res = await fetch('/api/library/' + currentId + '/audio', {
       method: 'POST',
-      headers: { 'X-Filename': encodeURIComponent(file.name) },
+      headers: { 'X-Filename': encodeURIComponent(file.name), 'X-ABS-CSRF': '1' },
       body: file
     });
     if (res.status === 401) { showError('セッションが切れています。/abs ui を再実行してください。'); return; }

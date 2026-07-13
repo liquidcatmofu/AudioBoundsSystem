@@ -36,6 +36,18 @@ Status: Accepted
 
 Audio transcoding is useful without TTS because ABS Core supports uploaded audio files. The generic ffmpeg execution, timeout, process termination, diagnostic limit and temporary-file cleanup therefore live in Core. The TTS addon retains its existing `tts.transcode.FfmpegTranscoder` entry point as a compatibility adapter and passes its configured ffmpeg path to the Core service. Provider-specific synthesis remains in the addon.
 
+## ADR-007: Web mutations require a custom request header
+
+Status: Accepted
+
+Authenticated `POST`, `PATCH` and `DELETE` API requests require `X-ABS-CSRF: 1` in addition to the `SameSite=Strict` session cookie. Cross-site HTML forms cannot attach this header, and cross-origin scripts cannot send it without a successful CORS preflight (ABS does not enable CORS). Safe methods remain accessible without the header. This is a compatibility change for third-party API clients, which must add the header.
+
+## ADR-008: Shared folders are use-only, not writable
+
+Status: Accepted
+
+`FolderAccess.ALLOWED` is documented as view/use access. Creating or deleting audio, TTS entries or sequences is therefore restricted to `OWNER` (with OP treated as owner by the existing access function). This closes mutation paths that previously checked only `canView()`.
+
 ## Open decisions
 
 ### TOML authority

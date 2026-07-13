@@ -62,6 +62,32 @@ class AddonTTSBridgeTest {
                 () -> new AddonTTSBridge().synthesize(request));
     }
 
+    @Test
+    void rejectsUnsupportedAndOutOfRangeParameters() {
+        TTSSynthesisRequest unsupported = validRequest();
+        unsupported.params.put("unknown", 1.0);
+        assertThrows(IllegalArgumentException.class,
+                () -> new AddonTTSBridge().synthesize(unsupported));
+
+        TTSSynthesisRequest outOfRange = validRequest();
+        outOfRange.params.put("speedScale", 3.0);
+        assertThrows(IllegalArgumentException.class,
+                () -> new AddonTTSBridge().synthesize(outOfRange));
+
+        TTSSynthesisRequest nonFinite = validRequest();
+        nonFinite.params.put("speedScale", Double.NaN);
+        assertThrows(IllegalArgumentException.class,
+                () -> new AddonTTSBridge().synthesize(nonFinite));
+    }
+
+    private static TTSSynthesisRequest validRequest() {
+        TTSSynthesisRequest request = new TTSSynthesisRequest();
+        request.engineId = PROVIDER.getId();
+        request.speakerId = "speaker-7";
+        request.text = "test";
+        return request;
+    }
+
     private static final class CapturingProvider implements TTSProvider {
         private String text;
         private String speakerId;

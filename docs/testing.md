@@ -138,3 +138,26 @@ BUILD SUCCESSFUL in 1m 7s
 The Forge and Fabric addon metadata both declare `abs` as a required dependency. The packaged TTS addon retains its adapter class and resolves the generic transcoder from the required Core mod at runtime.
 
 Manual result: the user confirmed successful operation after the Core/TTS transcoder consolidation on 2026-07-13. Exact loader, server topology and failure scenarios were not recorded, so those broader acceptance cases remain open.
+
+## Input and authorization hardening
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 13s
+```
+
+Nineteen tests now pass: 12 in `common` and 7 in `tts-addon`. New coverage verifies declared and chunked body limits, mutation-header policy, and rejection of unknown, non-finite and out-of-range provider parameters. Minecraft-side owner/OP/distance packet checks and the two-request synthesis semaphore still require integration or manual tests.
+
+```text
+rtk ./gradlew build
+BUILD SUCCESSFUL in 43s
+53 actionable tasks: 26 executed, 27 up-to-date
+```
+
+Behavioral limits added in this phase:
+
+- JSON request body: 64 KiB
+- Audio upload: 64 MiB, enforced while reading
+- TTS text: 10,000 characters
+- Concurrent create/re-synthesis operations: 2 per running HTTP handler, excess returns HTTP 429
+- Controller configuration: at most 256 targets, 15 queues and 256 entries per queue
