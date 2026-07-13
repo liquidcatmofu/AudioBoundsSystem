@@ -94,6 +94,14 @@ VOICEVOX-compatible endpoints are local or operator-configured HTTP services, bu
 
 Every Provider connection is disconnected in a `finally` block. These fixed limits protect HTTP worker memory without changing the Provider interface; making them configurable is deferred until a real engine requires a different bound.
 
+## ADR-014: Provider discovery is cached briefly in the addon bridge
+
+Status: Accepted
+
+The Core TTS endpoint requests both addon availability and engine metadata. Provider availability probes are cached for five seconds, and the assembled engine/speaker list is cached for the same interval. This removes duplicate probes within one API response and coalesces concurrent or rapidly repeated dashboard requests under one bridge-level lock.
+
+An expired availability probe invalidates the assembled engine list, so `available` and `engines` do not disagree when an engine starts or stops. The operator command `/abstts check` continues to call the active Provider directly and therefore remains an explicit live check.
+
 ## Open decisions
 
 ### TOML authority

@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,6 +59,28 @@ class AddonTTSBridgeTest {
         assertEquals(PROVIDER.getDisplayName(), engine.name);
         assertEquals(1, engine.speakers.size());
         assertEquals(1, engine.params.size());
+    }
+
+    @Test
+    void cachesProviderDiscoveryUntilTheTtlExpires() {
+        AtomicLong now = new AtomicLong();
+        AddonTTSBridge bridge = new AddonTTSBridge(now::get, TimeUnit.SECONDS.toNanos(5));
+        int availabilityBefore = PROVIDER.availabilityCount;
+        int speakersBefore = PROVIDER.speakerListCount;
+
+        assertTrue(bridge.isAvailable());
+        bridge.listEngines();
+        assertTrue(bridge.isAvailable());
+        bridge.listEngines();
+
+        assertEquals(availabilityBefore + 1, PROVIDER.availabilityCount);
+        assertEquals(speakersBefore + 1, PROVIDER.speakerListCount);
+
+        now.addAndGet(TimeUnit.SECONDS.toNanos(5));
+        bridge.listEngines();
+
+        assertEquals(availabilityBefore + 2, PROVIDER.availabilityCount);
+        assertEquals(speakersBefore + 2, PROVIDER.speakerListCount);
     }
 
     @Test
@@ -114,11 +138,17 @@ class AddonTTSBridgeTest {
         private String speakerId;
         private Map<String, Double> params;
         private int synthesisCount;
+        private int availabilityCount;
+        private int speakerListCount;
 
         @Override public String getId() { return "fake-regression-provider"; }
         @Override public String getDisplayName() { return "Fake Regression Provider"; }
-        @Override public boolean isAvailable() { return true; }
+        @Override public boolean isAvailable() {
+            availabilityCount++;
+            return true;
+        }
         @Override public List<TTSSpeaker> listSpeakers() {
+            speakerListCount++;
             return List.of(new TTSSpeaker("speaker-7", "Test Speaker"));
         }
         @Override public List<TTSParam> paramSchema() {

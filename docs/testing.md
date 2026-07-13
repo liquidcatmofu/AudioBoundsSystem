@@ -277,3 +277,14 @@ BUILD SUCCESSFUL in 3s
 ```
 
 Thirty-six tests now pass across the project: 22 in `common` and 14 in `tts-addon`. A live HTTP fixture test for connection cleanup, non-200 diagnostics and chunked transfer remains open.
+
+## Provider discovery cache
+
+The addon bridge now reuses Provider availability and engine/speaker discovery results for five seconds. A fake-clock regression test verifies that repeated availability-plus-engine queries perform one Provider probe and one speaker-list request, then refresh both after expiry.
+
+```text
+rtk ./gradlew :tts-addon:test
+BUILD SUCCESSFUL in 3s
+```
+
+Thirty-seven tests now pass across the project: 22 in `common` and 15 in `tts-addon`.

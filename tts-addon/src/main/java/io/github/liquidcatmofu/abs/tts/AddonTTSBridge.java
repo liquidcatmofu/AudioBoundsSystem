@@ -10,39 +10,70 @@ import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /** common の {@link TTSBridge} を tts-addon の {@link TTSProviderRegistry} で実装する。 */
 public class AddonTTSBridge implements TTSBridge {
     private static final int CACHE_LOCK_COUNT = 64;
     private static final Object[] CACHE_LOCKS = createCacheLocks();
+    private static final long DEFAULT_DISCOVERY_TTL_NANOS = TimeUnit.SECONDS.toNanos(5);
+
+    private final Object discoveryLock = new Object();
+    private final LongSupplier nanoTime;
+    private final long discoveryTtlNanos;
+    private final Map<String, AvailabilitySnapshot> availabilityCache = new LinkedHashMap<>();
+    private EngineSnapshot engineCache;
+
+    public AddonTTSBridge() {
+        this(System::nanoTime, DEFAULT_DISCOVERY_TTL_NANOS);
+    }
+
+    AddonTTSBridge(LongSupplier nanoTime, long discoveryTtlNanos) {
+        if (discoveryTtlNanos < 1) throw new IllegalArgumentException("discoveryTtlNanos must be positive");
+        this.nanoTime = nanoTime;
+        this.discoveryTtlNanos = discoveryTtlNanos;
+    }
 
     @Override
     public boolean isAvailable() {
-        for (TTSProvider p : TTSProviderRegistry.getAll()) {
-            if (p.isAvailable()) return true;
+        synchronized (discoveryLock) {
+            long now = nanoTime.getAsLong();
+            for (TTSProvider provider : TTSProviderRegistry.getAll()) {
+                if (isProviderAvailable(provider, now)) return true;
+            }
+            return false;
         }
-        return false;
     }
 
     @Override
     public List<TTSEngine> listEngines() {
-        List<TTSEngine> engines = new ArrayList<>();
-        for (TTSProvider p : TTSProviderRegistry.getAll()) {
-            if (!p.isAvailable()) continue;   // 起動していないエンジンはスキップ
-            TTSEngine engine = new TTSEngine();
-            engine.id = p.getId();
-            engine.name = p.getDisplayName();
-            engine.params = p.paramSchema();
-            try {
-                engine.speakers = p.listSpeakers();
-            } catch (Exception e) {
-                TTSAddon.LOGGER.warn("ABS TTS: failed to list speakers for {}", p.getId(), e);
+        synchronized (discoveryLock) {
+            long now = nanoTime.getAsLong();
+            if (engineCache != null && isFresh(engineCache.loadedAtNanos(), now)) {
+                return engineCache.engines();
             }
-            engines.add(engine);
+
+            List<TTSEngine> engines = new ArrayList<>();
+            for (TTSProvider provider : TTSProviderRegistry.getAll()) {
+                if (!isProviderAvailable(provider, now)) continue;
+                TTSEngine engine = new TTSEngine();
+                engine.id = provider.getId();
+                engine.name = provider.getDisplayName();
+                engine.params = provider.paramSchema();
+                try {
+                    engine.speakers = provider.listSpeakers();
+                } catch (Exception e) {
+                    TTSAddon.LOGGER.warn("ABS TTS: failed to list speakers for {}", provider.getId(), e);
+                }
+                engines.add(engine);
+            }
+            engineCache = new EngineSnapshot(List.copyOf(engines), now);
+            return engineCache.engines();
         }
-        return engines;
     }
 
     @Override
@@ -116,9 +147,33 @@ public class AddonTTSBridge implements TTSBridge {
         return null;
     }
 
+    private boolean isProviderAvailable(TTSProvider provider, long now) {
+        AvailabilitySnapshot cached = availabilityCache.get(provider.getId());
+        if (cached != null && isFresh(cached.checkedAtNanos(), now)) {
+            return cached.available();
+        }
+        boolean available;
+        try {
+            available = provider.isAvailable();
+        } catch (Exception e) {
+            TTSAddon.LOGGER.warn("ABS TTS: failed to probe provider {}", provider.getId(), e);
+            available = false;
+        }
+        availabilityCache.put(provider.getId(), new AvailabilitySnapshot(available, now));
+        engineCache = null;
+        return available;
+    }
+
+    private boolean isFresh(long loadedAtNanos, long now) {
+        return now - loadedAtNanos < discoveryTtlNanos;
+    }
+
     private static Object[] createCacheLocks() {
         Object[] locks = new Object[CACHE_LOCK_COUNT];
         for (int i = 0; i < locks.length; i++) locks[i] = new Object();
         return locks;
     }
+
+    private record AvailabilitySnapshot(boolean available, long checkedAtNanos) {}
+    private record EngineSnapshot(List<TTSEngine> engines, long loadedAtNanos) {}
 }
