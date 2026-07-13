@@ -31,6 +31,7 @@ public final class LibraryTts {
 
     public static List<TtsEntry> list(String folderId) {
         List<TtsEntry> result = new ArrayList<>();
+        if (!ABSLibrary.isSafeId(folderId)) return result;
         Path dir = ttsDir(folderId);
         if (!Files.isDirectory(dir)) return result;
         try (Stream<Path> files = Files.list(dir)) {
@@ -49,6 +50,7 @@ public final class LibraryTts {
     }
 
     public static Optional<TtsEntry> load(String folderId, String id) {
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(id)) return Optional.empty();
         Path meta = ttsDir(folderId).resolve(id + ".json");
         if (!Files.exists(meta)) return Optional.empty();
         try {
@@ -61,6 +63,7 @@ public final class LibraryTts {
     /** 合成済みの ogg を保存し、メタデータ（スクリプト込み）を書き出す。 */
     public static synchronized TtsEntry create(String folderId, String displayName, TTSSynthesisRequest req,
                                                String speakerName, byte[] ogg, UUID creator) throws IOException {
+        if (!ABSLibrary.isSafeId(folderId)) throw new IOException("Invalid folder id");
         Path dir = ttsDir(folderId);
         Files.createDirectories(dir);
 
@@ -115,6 +118,9 @@ public final class LibraryTts {
     /** 既存エントリを再合成して上書き保存する（ID・cacheFile は維持）。 */
     public static synchronized TtsEntry update(String folderId, String id, String displayName,
                                                TTSSynthesisRequest req, String speakerName, byte[] ogg) throws IOException {
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(id)) {
+            throw new IOException("Invalid TTS entry path");
+        }
         TtsEntry entry = load(folderId, id)
                 .orElseThrow(() -> new IOException("TTS entry not found: " + id));
 
@@ -150,7 +156,8 @@ public final class LibraryTts {
             AtomicFiles.writeString(ttsDir(folderId).resolve(id + ".json"),
                     GSON.toJson(entry), StandardCharsets.UTF_8);
             if (oldCacheFile != null && !oldCacheFile.equals(newCacheFile)) {
-                Files.deleteIfExists(ABSHttpServer.getCacheDir().resolve(oldCacheFile));
+                Optional<Path> oldCachePath = ABSHttpServer.resolveCacheFile(oldCacheFile);
+                if (oldCachePath.isPresent()) Files.deleteIfExists(oldCachePath.get());
             }
             return entry;
         } catch (IOException e) {
@@ -164,25 +171,23 @@ public final class LibraryTts {
     public static boolean delete(String folderId, String id) throws IOException {
         TtsEntry entry = load(folderId, id).orElse(null);
         if (entry == null) return false;
-        if (entry.cacheFile != null) {
-            Files.deleteIfExists(ABSHttpServer.getCacheDir().resolve(entry.cacheFile));
-        }
+        Optional<Path> cachePath = cacheFilePath(entry);
+        if (cachePath.isPresent()) Files.deleteIfExists(cachePath.get());
         Files.deleteIfExists(ttsDir(folderId).resolve(id + ".json"));
         return true;
     }
 
     public static void purgeCacheForFolder(String folderId) {
         for (TtsEntry entry : list(folderId)) {
-            if (entry.cacheFile != null) {
-                try {
-                    Files.deleteIfExists(ABSHttpServer.getCacheDir().resolve(entry.cacheFile));
-                } catch (IOException ignored) {}
-            }
+            try {
+                Optional<Path> cachePath = cacheFilePath(entry);
+                if (cachePath.isPresent()) Files.deleteIfExists(cachePath.get());
+            } catch (IOException ignored) {}
         }
     }
 
-    public static Path cacheFilePath(TtsEntry entry) {
-        return ABSHttpServer.getCacheDir().resolve(entry.cacheFile);
+    public static Optional<Path> cacheFilePath(TtsEntry entry) {
+        return entry == null ? Optional.empty() : ABSHttpServer.resolveCacheFile(entry.cacheFile);
     }
 
     private static String trimForName(String text) {
@@ -200,8 +205,8 @@ public final class LibraryTts {
                     || !contentHash.equals(entry.contentHash)) {
                 continue;
             }
-            Path cached = cacheFilePath(entry);
-            if (AudioContent.hasOggHeader(cached)) {
+            Path cached = cacheFilePath(entry).orElse(null);
+            if (cached != null && AudioContent.hasOggHeader(cached)) {
                 return entry;
             }
         }

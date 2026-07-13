@@ -64,7 +64,15 @@ New play packets include the Ogg SHA-256. The client uses that hash as both the 
 
 Concurrent requests for the same hash are serialized inside one client, so only the first performs HTTP transfer and followers reuse the committed file. Dynamic sound bytes are removed only after the last active speaker using that hash stops. Cache files are shared safely across servers because their identity is the content hash.
 
-Server-driven invalidation is deferred: deleted server content naturally ages out through LRU. Legacy metadata without `contentHash` remains compatible but uses the old download-every-time path until re-imported, re-synthesized or migrated.
+Server-driven invalidation is deferred: deleted server content naturally ages out through LRU. Pre-release metadata without `contentHash` can still use the fallback download path, but no automatic migration is maintained before the first release.
+
+## ADR-011: Orphan server-cache cleanup runs once in the background
+
+Status: Accepted
+
+After the HTTP cache directory is initialized, Core starts one owned daemon executor and removes unreferenced `.ogg` files only from the root of `abs_cache`. Files created at or after the scan began are protected from deletion, and subdirectories such as the TTS command cache are not traversed. Metadata cache paths are accepted only when they resolve to direct children of `abs_cache`; malformed or escaping paths are neither served nor deleted.
+
+The project has not shipped yet, so maintaining an automatic migration framework for hashless development metadata is intentionally deferred. Development worlds can re-register those entries if content-addressed client caching is required.
 
 ## Open decisions
 

@@ -201,3 +201,14 @@ Manual tests still required:
 - Fill beyond 128 MiB with real Ogg files and inspect oldest-access eviction.
 - Verify behavior when the server deletes an entry that remains in the client LRU.
 - Confirm legacy hashless entries continue to play through the fallback path.
+
+## Server cache maintenance
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 17s
+```
+
+Twenty-seven tests now pass: 20 in `common` and 7 in `tts-addon`. New coverage verifies rejection of cache paths outside (or below) the root cache directory, root-level orphan deletion, protection of referenced/recent files, and preservation of TTS cache subdirectories.
+
+Runtime verification is still required for maintenance shutdown and orphan cleanup while WebUI uploads or TTS re-synthesis are active.

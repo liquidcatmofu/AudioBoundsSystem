@@ -16,6 +16,7 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -91,6 +92,29 @@ public class ABSHttpServer {
     /** 音声キャッシュディレクトリを返す（TTS 統合フェーズで使用） */
     public static Path getCacheDir() {
         return cacheDir;
+    }
+
+    /** メタデータ中の相対パスを abs_cache 内に限定して解決する。 */
+    public static Optional<Path> resolveCacheFile(String cacheFile) {
+        return resolveCacheFile(cacheDir, cacheFile);
+    }
+
+    static Optional<Path> resolveCacheFile(Path root, String cacheFile) {
+        if (root == null || cacheFile == null || cacheFile.isBlank()) return Optional.empty();
+        try {
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            Path resolved = normalizedRoot.resolve(cacheFile).normalize();
+            // ライブラリ音源は abs_cache 直下だけを使用する。TTS の内部サブキャッシュは配信しない。
+            if (!normalizedRoot.equals(resolved.getParent())) return Optional.empty();
+            if (Files.exists(resolved)) {
+                Path realRoot = normalizedRoot.toRealPath();
+                Path realFile = resolved.toRealPath();
+                if (!realRoot.equals(realFile.getParent())) return Optional.empty();
+            }
+            return Optional.of(resolved);
+        } catch (IOException | RuntimeException e) {
+            return Optional.empty();
+        }
     }
 
     public static boolean isRunning() {

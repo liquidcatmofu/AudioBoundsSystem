@@ -32,11 +32,14 @@ public final class LibraryRef {
             String folderId = parts[0];
             String type     = parts[1];
             String entryId  = parts[2];
+            if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(entryId)) return Optional.empty();
             return switch (type) {
                 case "audio" -> LibraryAudio.load(folderId, entryId)
-                        .map(entry -> new ResolvedAudio(LibraryAudio.cacheFilePath(entry), entry.contentHash));
+                        .flatMap(entry -> LibraryAudio.cacheFilePath(entry)
+                                .map(path -> new ResolvedAudio(path, entry.contentHash)));
                 case "tts"   -> LibraryTts.load(folderId, entryId)
-                        .map(entry -> new ResolvedAudio(LibraryTts.cacheFilePath(entry), entry.contentHash));
+                        .flatMap(entry -> LibraryTts.cacheFilePath(entry)
+                                .map(path -> new ResolvedAudio(path, entry.contentHash)));
                 default      -> Optional.empty();
             };
         }

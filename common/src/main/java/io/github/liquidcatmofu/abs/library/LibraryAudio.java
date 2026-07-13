@@ -30,6 +30,7 @@ public final class LibraryAudio {
 
     public static List<AudioEntry> list(String folderId) {
         List<AudioEntry> result = new ArrayList<>();
+        if (!ABSLibrary.isSafeId(folderId)) return result;
         Path dir = audioDir(folderId);
         if (!Files.isDirectory(dir)) return result;
         try (Stream<Path> files = Files.list(dir)) {
@@ -48,6 +49,7 @@ public final class LibraryAudio {
     }
 
     public static Optional<AudioEntry> load(String folderId, String audioId) {
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(audioId)) return Optional.empty();
         Path meta = audioDir(folderId).resolve(audioId + ".json");
         if (!Files.exists(meta)) return Optional.empty();
         try {
@@ -60,6 +62,7 @@ public final class LibraryAudio {
     /** アップロードされたファイルを Ogg に変換して取り込み、メタデータを保存する。 */
     public static AudioEntry importAudio(String folderId, byte[] data, String originalName, UUID uploader)
             throws IOException, InterruptedException {
+        if (!ABSLibrary.isSafeId(folderId)) throw new IOException("Invalid folder id");
         Path dir = audioDir(folderId);
         Files.createDirectories(dir);
 
@@ -115,12 +118,12 @@ public final class LibraryAudio {
         if (entry == null) return false;
         Path dir = audioDir(folderId);
         // 配信用 ogg
-        if (entry.cacheFile != null) {
-            Files.deleteIfExists(ABSHttpServer.getCacheDir().resolve(entry.cacheFile));
-        }
+        Optional<Path> cachePath = cacheFilePath(entry);
+        if (cachePath.isPresent()) Files.deleteIfExists(cachePath.get());
         // 原本
         if (entry.srcFile != null) {
-            Files.deleteIfExists(dir.resolve(entry.srcFile));
+            Optional<Path> sourcePath = resolveDirectChild(dir, entry.srcFile);
+            if (sourcePath.isPresent()) Files.deleteIfExists(sourcePath.get());
         }
         // メタデータ
         Files.deleteIfExists(dir.resolve(audioId + ".json"));
@@ -130,16 +133,26 @@ public final class LibraryAudio {
     /** フォルダ削除時に、配下の音声が参照する abs_cache の ogg を消す。 */
     public static void purgeCacheForFolder(String folderId) {
         for (AudioEntry entry : list(folderId)) {
-            if (entry.cacheFile != null) {
-                try {
-                    Files.deleteIfExists(ABSHttpServer.getCacheDir().resolve(entry.cacheFile));
-                } catch (IOException ignored) {}
-            }
+            try {
+                Optional<Path> cachePath = cacheFilePath(entry);
+                if (cachePath.isPresent()) Files.deleteIfExists(cachePath.get());
+            } catch (IOException ignored) {}
         }
     }
 
-    public static Path cacheFilePath(AudioEntry entry) {
-        return ABSHttpServer.getCacheDir().resolve(entry.cacheFile);
+    public static Optional<Path> cacheFilePath(AudioEntry entry) {
+        return entry == null ? Optional.empty() : ABSHttpServer.resolveCacheFile(entry.cacheFile);
+    }
+
+    private static Optional<Path> resolveDirectChild(Path directory, String fileName) {
+        if (directory == null || fileName == null || fileName.isBlank()) return Optional.empty();
+        try {
+            Path root = directory.toAbsolutePath().normalize();
+            Path resolved = root.resolve(fileName).normalize();
+            return root.equals(resolved.getParent()) ? Optional.of(resolved) : Optional.empty();
+        } catch (RuntimeException e) {
+            return Optional.empty();
+        }
     }
 
     // ── helpers ────────────────────────────────────────

@@ -302,7 +302,9 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendError(exchange, 404, "Audio not found");
             return;
         }
-        serveOgg(exchange, LibraryAudio.cacheFilePath(entry));
+        Path cached = LibraryAudio.cacheFilePath(entry).orElse(null);
+        if (cached == null) WebAuthHelper.sendError(exchange, 404, "Audio file missing");
+        else serveOgg(exchange, cached);
     }
 
     // /api/library/{folderId}/tts[/{id}[/preview]]
@@ -364,7 +366,9 @@ public class LibraryApiHandler implements HttpHandler {
         } else if (seg.length == 3 && "preview".equals(seg[2]) && "GET".equals(method)) {
             TtsEntry entry = LibraryTts.load(folderId, ttsId).orElse(null);
             if (entry == null) { WebAuthHelper.sendError(exchange, 404, "Not found"); return; }
-            serveOgg(exchange, LibraryTts.cacheFilePath(entry));
+            Path cached = LibraryTts.cacheFilePath(entry).orElse(null);
+            if (cached == null) WebAuthHelper.sendError(exchange, 404, "Audio file missing");
+            else serveOgg(exchange, cached);
         } else {
             WebAuthHelper.sendError(exchange, 404, "Not Found");
         }
