@@ -315,3 +315,17 @@ BUILD SUCCESSFUL in 13s
 ```
 
 Thirty-nine tests now pass across the project: 23 in `common` and 16 in `tts-addon`. Actual two-client playback and disconnect-during-transfer remain manual acceptance tests.
+
+## WebUI RPC routing foundation
+
+The existing Me, TTS, Library and Blocks handlers now sit behind one `WebApiRouter`. A bounded Minecraft RPC request can be represented as a `MemoryHttpExchange`, preserving the same request headers, response status, content type, body limits and authorization paths as the temporary HTTP transport. A unit test covers request metadata and captured JSON responses.
+
+```text
+rtk ./gradlew :common:test
+BUILD SUCCESSFUL in 5s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 13s
+```
+
+Forty tests now pass across the project: 24 in `common` and 16 in `tts-addon`.

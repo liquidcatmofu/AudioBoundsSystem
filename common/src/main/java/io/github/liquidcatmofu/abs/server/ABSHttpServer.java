@@ -3,11 +3,8 @@ package io.github.liquidcatmofu.abs.server;
 import com.sun.net.httpserver.HttpServer;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.server.web.AuthApiHandler;
-import io.github.liquidcatmofu.abs.server.web.BlockConfigApiHandler;
-import io.github.liquidcatmofu.abs.server.web.LibraryApiHandler;
-import io.github.liquidcatmofu.abs.server.web.MeApiHandler;
-import io.github.liquidcatmofu.abs.server.web.TtsApiHandler;
 import io.github.liquidcatmofu.abs.server.web.WebUIHandler;
+import io.github.liquidcatmofu.abs.server.web.WebApiRouter;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -38,10 +35,7 @@ public class ABSHttpServer {
         ExecutorService newExecutor = Executors.newFixedThreadPool(8, new AbsHttpThreadFactory());
         try {
             newServer.createContext("/api/auth",    new AuthApiHandler());
-            newServer.createContext("/api/me",      new MeApiHandler(mcServer));
-            newServer.createContext("/api/tts",     new TtsApiHandler());
-            newServer.createContext("/api/library", new LibraryApiHandler(mcServer));
-            newServer.createContext("/api/blocks",  new BlockConfigApiHandler(mcServer));
+            newServer.createContext("/api",         new WebApiRouter(mcServer));
             newServer.createContext("/ui",          new WebUIHandler());
             newServer.setExecutor(newExecutor);
             newServer.start();
