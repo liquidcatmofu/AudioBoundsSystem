@@ -178,17 +178,17 @@ public class AudioControllerBlockEntity extends BlockEntity {
             int durationTicks = playTrackOnTargets(level, audioFile);
             if (durationTicks > 0) {
                 activeQueueHadPlayableTrack = true;
-                nextTrackTick = level.getGameTime() + durationTicks + step.delayAfterTicks();
+                nextTrackTick = ControllerQueueTiming.afterTrack(
+                        level.getGameTime(), durationTicks, step.delayAfterTicks());
                 return;
             }
         }
 
-        if (redstoneMode == RedstoneMode.LEVEL && lastRedstoneSignal > 0 && activeQueueHadPlayableTrack) {
-            scheduleQueueRestart(level, lastRedstoneSignal);
-            return;
+        switch (ControllerQueueTiming.onQueueExhausted(
+                redstoneMode, lastRedstoneSignal, activeQueueHadPlayableTrack)) {
+            case RESTART -> scheduleQueueRestart(level, lastRedstoneSignal);
+            case STOP -> stopQueue();
         }
-
-        stopQueue();
     }
 
     private int playTrackOnTargets(ServerLevel level, String audioFile) {
@@ -251,7 +251,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
         activeQueueIndex = 0;
         activeQueueHadPlayableTrack = false;
         pendingRestartSignal = signal;
-        nextTrackTick = level.getGameTime() + 1L;
+        nextTrackTick = ControllerQueueTiming.restartOnNextTick(level.getGameTime());
     }
 
     private void stopTargets(ServerLevel level) {
@@ -304,7 +304,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
             controller.syncRedstoneState(serverLevel.getBestNeighborSignal(pos));
         }
 
-        if (controller.nextTrackTick >= 0L && serverLevel.getGameTime() >= controller.nextTrackTick) {
+        if (ControllerQueueTiming.isDue(controller.nextTrackTick, serverLevel.getGameTime())) {
             if (controller.pendingRestartSignal > 0) {
                 int signal = controller.pendingRestartSignal;
                 controller.pendingRestartSignal = 0;
