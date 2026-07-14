@@ -16,7 +16,10 @@ public enum FalloffCurve {
 
     /** 距離 t (0.0 = 中心, 1.0 = 境界) に対するゲイン [0.0, 1.0] を返す */
     public double gain(double t) {
-        t = Math.max(0.0, Math.min(1.0, t));
+        if (t >= 1.0) {
+            return 0.0;
+        }
+        t = Math.max(0.0, t);
         return switch (this) {
             case LINEAR -> 1.0 - t;
             case LOGARITHMIC -> 1.0 - Math.log1p(t * (Math.E - 1)) / 1.0;

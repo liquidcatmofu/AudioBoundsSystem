@@ -43,7 +43,16 @@ class AudioBoundsTest {
     void curveInputsAreClamped() {
         for (FalloffCurve curve : FalloffCurve.values()) {
             assertEquals(curve.gain(0.0), curve.gain(-10.0), EPSILON, curve.name());
-            assertEquals(curve.gain(1.0), curve.gain(10.0), EPSILON, curve.name());
+            assertEquals(0.0, curve.gain(1.0), EPSILON, curve.name());
+            assertEquals(0.0, curve.gain(10.0), EPSILON, curve.name());
+        }
+    }
+
+    @Test
+    void everyCurveIsSilentAtAndOutsideConfiguredBounds() {
+        for (FalloffCurve curve : FalloffCurve.values()) {
+            assertEquals(0.0, curve.gain(1.0), EPSILON, curve.name());
+            assertEquals(0.0, curve.gain(1.01), EPSILON, curve.name());
         }
     }
 }

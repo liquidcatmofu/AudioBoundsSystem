@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Sixty-six tests now pass across the project: 48 in `common` and 18 in `tts-addon`.
+Sixty-seven tests now pass across the project: 49 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -409,3 +409,7 @@ Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify 
 `TokenStoreTest` uses an injected test clock rather than sleeping. It verifies that a token is valid through its exact 60-second boundary and rejected afterward, can be consumed only once even when two threads race, and is revoked by service cleanup. Minecraft packet delivery remains a separate integration concern.
 
 `AudioTransferServiceLifecycleTest` verifies that transfer-service start and stop are idempotent, that the executor can be started again after shutdown, and that stopping revokes every outstanding transfer token. The test never sends a Minecraft packet.
+
+## Speaker bounds and falloff
+
+`AudioBoundsTest` covers normalized distances for sphere, box, cylinder and hemisphere bounds, including the hemisphere base. It also verifies every falloff curve is monotonic and exactly silent at and outside the configured boundary. This hard cutoff is required because dynamic speaker sounds use `Attenuation.NONE`; without it, the inverse-square curve remained audible everywhere at 10% volume.
