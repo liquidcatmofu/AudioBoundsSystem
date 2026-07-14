@@ -116,7 +116,7 @@ public final class SpeakerTomlConfig {
     }
 
     public static boolean readSubtitleEnabled(CommentedConfig config) {
-        return config.getOrElse("display.subtitle_enabled", true);
+        return config.getOrElse("display.subtitle_enabled", false);
     }
 
     public static String readTrackTitle(CommentedConfig config) {
@@ -150,7 +150,7 @@ public final class SpeakerTomlConfig {
         config.set("display.subtitle_enabled", subtitleEnabled);
         config.setComment("display.subtitle_enabled", "Set false to suppress the track title and subtitle HUD for this speaker.");
         config.set("display.track_title", trackTitle == null ? "" : trackTitle);
-        config.setComment("display.track_title", "Optional title shown above subtitles. Empty values fall back to audio.file.");
+        config.setComment("display.track_title", "Optional title shown above subtitles. Empty values use the library audio display name when available.");
         config.set("display.subtitle", subtitle == null ? "" : subtitle);
         config.setComment("display.subtitle", "Optional subtitle text shown while the audio starts playing.");
 

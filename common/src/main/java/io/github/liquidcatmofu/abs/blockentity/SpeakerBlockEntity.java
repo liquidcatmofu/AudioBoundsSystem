@@ -46,7 +46,7 @@ public class SpeakerBlockEntity extends BlockEntity {
     private String       audioFile   = "";
     private String       trackTitle  = "";
     private String       subtitle    = "";
-    private boolean      subtitleEnabled = true;
+    private boolean      subtitleEnabled = false;
     private String       displayName      = "";
     private UUID         ownerUuid        = null;
     private String       audioDisplayName = "";
@@ -246,10 +246,7 @@ public class SpeakerBlockEntity extends BlockEntity {
     }
 
     private String displayTrackTitle() {
-        if (!trackTitle.isBlank()) {
-            return trackTitle;
-        }
-        return subtitle.isBlank() ? audioFile : "";
+        return SubtitleDisplayText.trackTitle(trackTitle, audioDisplayName);
     }
 
     private void syncToClients() {

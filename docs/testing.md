@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Eighty-three tests now pass across the project: 65 in `common` and 18 in `tts-addon`.
+Ninety tests now pass across the project: 72 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -433,3 +433,7 @@ BlockEntity NBT is the sole automatic restore source for Speakers and Audio Cont
 ## Library sharing authorization
 
 `ABSLibraryAccessTest` builds a real temporary folder tree and verifies owner and operator access, inherited read/use sharing, owner and guest subtree listings, and rejection of null subjects. A visited-folder set bounds ancestor traversal, so cyclic parent metadata terminates without accidentally granting access.
+
+## Subtitle overlay state
+
+`SubtitleOverlayManagerTest` verifies trimming and null normalization, the 20-tick minimum lifetime, final-third alpha fade, source-specific stop behavior, replacement by newer playback and invisibility when both text fields are blank. Minecraft HUD drawing remains a client integration concern.

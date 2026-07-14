@@ -61,7 +61,7 @@ public final class SpeakerConfigScreen extends Screen {
         this.shape = bounds.getShape();
         this.falloffCurve = speaker == null ? FalloffCurve.LOGARITHMIC : speaker.getFalloffCurve();
         this.redstoneMode = speaker == null ? RedstoneMode.LEVEL : speaker.getRedstoneMode();
-        this.subtitleEnabled = speaker == null || speaker.isSubtitleEnabled();
+        this.subtitleEnabled = speaker != null && speaker.isSubtitleEnabled();
         this.selectedAudioRef   = speaker == null ? "" : speaker.getAudioFile();
         this.selectedAudioLabel = speaker == null ? "" : speaker.getAudioDisplayName();
     }

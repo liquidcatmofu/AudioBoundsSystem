@@ -31,6 +31,8 @@ public final class ABSGameTests {
 
         helper.assertTrue(helper.getBlockEntity(position) instanceof SpeakerBlockEntity,
                 "Speaker block did not create a SpeakerBlockEntity");
+        SpeakerBlockEntity speaker = (SpeakerBlockEntity) helper.getBlockEntity(position);
+        helper.assertTrue(!speaker.isSubtitleEnabled(), "Subtitles should be disabled by default");
         helper.succeed();
     }
 
