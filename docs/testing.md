@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Fifty-two tests now pass across the project: 34 in `common` and 18 in `tts-addon`.
+Fifty-six tests now pass across the project: 38 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -399,3 +399,5 @@ BUILD SUCCESSFUL in 20s
 ## Audio Controller signal transitions
 
 Controller input decisions are isolated in `ControllerSignalTransition`, allowing their semantics to be checked without starting Minecraft. The unit tests cover PULSE rising edges, LEVEL strength changes and falling-to-zero stops, signal clamping, and active-playback STOP/RESTART behavior. The BlockEntity still owns the side effects (starting queues and stopping speakers), while its first server tick now samples the actual neighboring redstone signal after the level is attached.
+
+Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify ordered mixing of ordinary and sequence refs, omission of missing sequences, malformed step handling and non-negative post-track delays. Controller playback schedules the following entry after the decoded track duration plus that step delay, matching WebUI sequence preview semantics.

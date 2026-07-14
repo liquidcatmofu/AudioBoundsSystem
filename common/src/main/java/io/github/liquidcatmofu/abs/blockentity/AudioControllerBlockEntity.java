@@ -8,7 +8,6 @@ import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.library.LibraryRef;
 import io.github.liquidcatmofu.abs.library.LibrarySequence;
-import io.github.liquidcatmofu.abs.library.SequenceStep;
 import io.github.liquidcatmofu.abs.server.AudioTransferService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -50,7 +49,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
     private boolean needsInitialRedstoneSync = true;
     private boolean tomlLoaded;
 
-    private List<String> activeQueue = List.of();
+    private List<ControllerQueuePlan.Step> activeQueue = List.of();
     private int activeQueueIndex;
     private boolean activeQueueHadPlayableTrack;
     private int pendingRestartSignal;
@@ -160,7 +159,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
             return;
         }
 
-        activeQueue = expandRefs(queue);
+        activeQueue = ControllerQueuePlan.expand(queue, LibrarySequence::load);
         activeQueueIndex = 0;
         activeQueueHadPlayableTrack = false;
         pendingRestartSignal = 0;
@@ -168,32 +167,10 @@ public class AudioControllerBlockEntity extends BlockEntity {
         runNextQueueEntry(level);
     }
 
-    /** シーケンス ref をステップの audioRef に展開し、通常 ref はそのまま渡す。 */
-    private List<String> expandRefs(List<String> refs) {
-        List<String> out = new ArrayList<>();
-        for (String ref : refs) {
-            if (ref.startsWith(LibraryRef.PREFIX)) {
-                String body  = ref.substring(LibraryRef.PREFIX.length());
-                String[] parts = body.split("/", 3);
-                if (parts.length == 3 && "sequence".equals(parts[1])) {
-                    LibrarySequence.load(parts[0], parts[2]).ifPresent(seq -> {
-                        for (SequenceStep step : seq.steps) {
-                            if (step.audioRef != null && !step.audioRef.isBlank()) {
-                                out.add(step.audioRef);
-                            }
-                        }
-                    });
-                    continue;
-                }
-            }
-            out.add(ref);
-        }
-        return List.copyOf(out);
-    }
-
     private void runNextQueueEntry(ServerLevel level) {
         while (activeQueueIndex < activeQueue.size()) {
-            String audioFile = activeQueue.get(activeQueueIndex++).trim();
+            ControllerQueuePlan.Step step = activeQueue.get(activeQueueIndex++);
+            String audioFile = step.audioRef() == null ? "" : step.audioRef().trim();
             if (audioFile.isEmpty()) {
                 continue;
             }
@@ -201,7 +178,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
             int durationTicks = playTrackOnTargets(level, audioFile);
             if (durationTicks > 0) {
                 activeQueueHadPlayableTrack = true;
-                nextTrackTick = level.getGameTime() + durationTicks;
+                nextTrackTick = level.getGameTime() + durationTicks + step.delayAfterTicks();
                 return;
             }
         }
