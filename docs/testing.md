@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Seventy-five tests now pass across the project: 57 in `common` and 18 in `tts-addon`.
+Seventy-seven tests now pass across the project: 59 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -423,3 +423,7 @@ Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify 
 ## Block configuration persistence authority
 
 BlockEntity NBT is the sole automatic restore source for Speakers and Audio Controllers. TOML files written on placement or configuration save are operator-readable snapshots and are never loaded implicitly during chunk attachment. This prevents nondeterministic NBT/TOML precedence; representative NBT round trips remain covered by Forge GameTest.
+
+## Sequence metadata persistence
+
+`LibrarySequenceTest` exercises create, load, update, sorted listing and delete against a temporary library root. Folder and sequence IDs are validated inside `LibrarySequence` itself, so crafted Controller refs cannot use `.`/`..` or slash-containing IDs to read JSON outside the library tree.

@@ -26,6 +26,7 @@ public final class LibrarySequence {
 
     public static List<SequenceEntry> list(String folderId) {
         List<SequenceEntry> result = new ArrayList<>();
+        if (!ABSLibrary.isSafeId(folderId) || ABSLibrary.getRoot() == null) return result;
         Path dir = seqDir(folderId);
         if (!Files.isDirectory(dir)) return result;
         try (Stream<Path> files = Files.list(dir)) {
@@ -44,6 +45,9 @@ public final class LibrarySequence {
     }
 
     public static Optional<SequenceEntry> load(String folderId, String id) {
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(id) || ABSLibrary.getRoot() == null) {
+            return Optional.empty();
+        }
         Path meta = seqDir(folderId).resolve(id + ".json");
         if (!Files.exists(meta)) return Optional.empty();
         try {
@@ -55,6 +59,7 @@ public final class LibrarySequence {
 
     public static SequenceEntry create(String folderId, String displayName,
                                        List<SequenceStep> steps, UUID creator) throws IOException {
+        requireSafeId(folderId, "folder");
         Path dir = seqDir(folderId);
         Files.createDirectories(dir);
 
@@ -72,6 +77,8 @@ public final class LibrarySequence {
 
     public static SequenceEntry update(String folderId, String id,
                                        String displayName, List<SequenceStep> steps) throws IOException {
+        requireSafeId(folderId, "folder");
+        requireSafeId(id, "sequence");
         SequenceEntry entry = load(folderId, id)
                 .orElseThrow(() -> new IOException("Sequence not found: " + id));
 
@@ -84,9 +91,18 @@ public final class LibrarySequence {
     }
 
     public static boolean delete(String folderId, String id) throws IOException {
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(id) || ABSLibrary.getRoot() == null) {
+            return false;
+        }
         Path meta = seqDir(folderId).resolve(id + ".json");
         if (!Files.exists(meta)) return false;
         Files.delete(meta);
         return true;
+    }
+
+    private static void requireSafeId(String id, String kind) throws IOException {
+        if (!ABSLibrary.isSafeId(id) || ABSLibrary.getRoot() == null) {
+            throw new IOException("Invalid " + kind + " id");
+        }
     }
 }
