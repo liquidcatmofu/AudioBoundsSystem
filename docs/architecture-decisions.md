@@ -128,11 +128,15 @@ Browser API requests are split into 30 KiB Minecraft payloads with a request UUI
 
 The pre-release `ABSHttpServer` and browser bootstrap-auth endpoint are removed so a future lifecycle change cannot accidentally restore a public listener. Bodies above 64 KiB are assembled in OS-managed temporary files with incremental digest validation, then audio uploads are streamed into atomic source storage and passed to FFmpeg by path.
 
+## ADR-018: Block entity NBT is authoritative; TOML is an operator snapshot
+
+Status: Accepted
+
+Speaker and Audio Controller state is restored exclusively from BlockEntity NBT. Configuration saves also write comment-preserving TOML beside the world as an operator-readable snapshot, but those files are not automatically imported during chunk loading. This avoids ambiguous precedence when NBT and a manually edited TOML disagree, and keeps block movement, backups and Minecraft's normal save lifecycle coherent.
+
+The unused `tomlLoaded` flags and no-op BlockEntity load hooks are removed. Existing TOML parsing helpers may support an explicit import command in the future, but such an import must be an intentional mutation that updates NBT and synchronizes clients rather than a hidden second restore path.
+
 ## Open decisions
-
-### TOML authority
-
-The project writes comment-preserving TOML and NBT, but no code currently invokes the TOML load helpers. Before enabling those calls, decide precedence and conflict handling between NBT, TOML and WebUI updates.
 
 ### Bounds falloff semantics
 

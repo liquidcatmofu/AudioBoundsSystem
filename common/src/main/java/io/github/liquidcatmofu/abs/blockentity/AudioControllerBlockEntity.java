@@ -2,7 +2,6 @@ package io.github.liquidcatmofu.abs.blockentity;
 
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
-import io.github.liquidcatmofu.abs.config.AudioControllerTomlConfig;
 import io.github.liquidcatmofu.abs.data.ControllerRetriggerMode;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
@@ -47,7 +46,6 @@ public class AudioControllerBlockEntity extends BlockEntity {
     private UUID ownerUuid;
     private int lastRedstoneSignal;
     private boolean needsInitialRedstoneSync = true;
-    private boolean tomlLoaded;
 
     private List<ControllerQueuePlan.Step> activeQueue = List.of();
     private int activeQueueIndex;
@@ -402,16 +400,4 @@ public class AudioControllerBlockEntity extends BlockEntity {
         return Map.copyOf(queues);
     }
 
-    private void loadTomlConfigIfReady() {
-        if (tomlLoaded || !(level instanceof ServerLevel)) {
-            return;
-        }
-
-        if (!controllerId.isBlank() || !targetSpeakerOffsets.isEmpty() || !redstoneQueues.isEmpty()) {
-            tomlLoaded = true;
-            return;
-        }
-
-        tomlLoaded = true;
-    }
 }

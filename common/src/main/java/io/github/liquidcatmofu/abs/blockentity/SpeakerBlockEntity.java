@@ -4,7 +4,6 @@ import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.OggAudioDuration;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
-import io.github.liquidcatmofu.abs.config.SpeakerTomlConfig;
 import io.github.liquidcatmofu.abs.data.AudioBounds;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
@@ -55,7 +54,6 @@ public class SpeakerBlockEntity extends BlockEntity {
 
     // 再生状態はトランジェント（NBT 保存しない）
     private boolean playing = false;
-    private boolean tomlLoaded = false;
     private boolean needsInitialRedstoneSync = false;
     private long playbackEndsAtTick = -1L;
 
@@ -312,13 +310,6 @@ public class SpeakerBlockEntity extends BlockEntity {
         if (tag.hasUUID(KEY_OWNER_UUID)) {
             ownerUuid = tag.getUUID(KEY_OWNER_UUID);
         }
-        loadTomlConfigIfReady();
-    }
-
-    @Override
-    public void setLevel(Level level) {
-        super.setLevel(level);
-        needsInitialRedstoneSync = false;
     }
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, SpeakerBlockEntity speaker) {
@@ -353,10 +344,4 @@ public class SpeakerBlockEntity extends BlockEntity {
         return ClientboundBlockEntityDataPacket.create(this);
     }
 
-    private void loadTomlConfigIfReady() {
-        if (tomlLoaded || level == null || level.isClientSide) {
-            return;
-        }
-        tomlLoaded = true;
-    }
 }

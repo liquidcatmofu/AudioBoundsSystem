@@ -419,3 +419,7 @@ Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify 
 `WebSessionStoreTest` uses an injected clock to verify the exact eight-hour validity boundary and rejection immediately afterward. It also covers per-session invalidation, server-wide clearing, unknown tokens and null input without waiting or launching Minecraft.
 
 `WebRpcServiceMetadataTest` fixes the request envelope accepted before chunk assembly: only GET/POST/PATCH/DELETE, local `/api` paths without `.` or `..` segments, bodies from zero through 64 MiB, and exactly 32-byte SHA-256 digests. Absolute, malformed and encoded traversal paths are rejected before routing.
+
+## Block configuration persistence authority
+
+BlockEntity NBT is the sole automatic restore source for Speakers and Audio Controllers. TOML files written on placement or configuration save are operator-readable snapshots and are never loaded implicitly during chunk attachment. This prevents nondeterministic NBT/TOML precedence; representative NBT round trips remain covered by Forge GameTest.
