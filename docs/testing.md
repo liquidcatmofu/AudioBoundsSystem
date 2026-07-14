@@ -369,3 +369,17 @@ BUILD SUCCESSFUL in 12s
 Forty-seven tests now pass across the project: 29 in `common` and 18 in `tts-addon`.
 
 Web RPC request dispatch now uses a separate four-thread worker pool, while response pacing and expiry cleanup use a dedicated single-thread scheduler. This prevents slow Provider or FFmpeg calls from consuming the scheduler needed by unrelated RPC transfers. Runtime concurrency and shutdown interruption remain manual acceptance cases.
+
+## Bridge v1 contract and CI
+
+The supported `ttsbridge` types and post-release additive compatibility rules are documented in `tts-bridge-api-v1.md`. A reflection test protects the three synchronous `TTSBridge` v1 method signatures. The project now contains a GitHub Actions workflow that runs `./gradlew build --no-daemon` on Temurin Java 17; its first hosted run remains unverified until the commit is pushed.
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 4s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 20s
+```
+
+Forty-eight tests now pass across the project: 30 in `common` and 18 in `tts-addon`.

@@ -4,7 +4,7 @@
 
 Status: Accepted
 
-The existing Core HTTP API, `TTSBridge`, provider implementation, library registration and speaker playback flow are the compatibility baseline. Stabilization work will add seams, adapters and tests rather than replacing this flow.
+The existing Core Web API semantics, `TTSBridge`, provider implementation, library registration and speaker playback flow are the compatibility baseline. The browser now reaches those APIs through Minecraft RPC; stabilization work adds seams, adapters and tests rather than replacing the vertical flow.
 
 ## ADR-002: Core owns generic audio; addon owns provider details
 
@@ -18,11 +18,11 @@ Status: Accepted for stabilization
 
 `TTSBridge.synthesize` currently returns `byte[]` synchronously. Removing or changing it would break the current addon boundary. Async/cancellable behavior should initially be introduced behind the HTTP handler or through an additional compatible API, not by removing the v1 method.
 
-## ADR-004: Runtime reports and automated verification are distinct
+## ADR-004: Manual reports and automated verification are distinct
 
 Status: Accepted
 
-The handoff states that WebUI configuration, synthesis, registration and playback work. Those features are marked “Verified working” with that evidence, while code-only features remain “Implemented but untested.” A successful Gradle build is not considered runtime verification.
+Features explicitly confirmed during manual development testing are marked “Verified working.” Code-only features remain “Implemented but untested.” A successful Gradle build proves compilation, packaging and automated-test behavior, but is not considered Minecraft runtime verification.
 
 ## ADR-005: Forge 1.20.1 / Java 17 is the release gate
 
@@ -72,7 +72,7 @@ Server-driven invalidation is deferred: deleted server content naturally ages ou
 
 Status: Accepted
 
-After the HTTP cache directory is initialized, Core starts one owned daemon executor and removes unreferenced `.ogg` files only from the root of `abs_cache`. Files created at or after the scan began are protected from deletion, and subdirectories such as the TTS command cache are not traversed. Metadata cache paths are accepted only when they resolve to direct children of `abs_cache`; malformed or escaping paths are neither served nor deleted.
+After the server audio-cache directory is initialized, Core starts one owned daemon executor and removes unreferenced `.ogg` files only from the root of `abs_cache`. Files created at or after the scan began are protected from deletion, and subdirectories such as the TTS command cache are not traversed. Metadata cache paths are accepted only when they resolve to direct children of `abs_cache`; malformed or escaping paths are neither served nor deleted.
 
 The project has not shipped yet, so maintaining an automatic migration framework for hashless development metadata is intentionally deferred. Development worlds can re-register those entries if content-addressed client caching is required.
 
@@ -126,7 +126,7 @@ The dedicated server no longer starts an HTTP listener. `/abs ui` sends an authe
 
 Browser API requests are split into 30 KiB Minecraft payloads with a request UUID, declared total length, ordered offsets and SHA-256. The server derives the player identity from the Minecraft connection, injects a short-lived internal Web session, and dispatches through the same `WebApiRouter` used by the former HTTP transport. Responses, including Ogg previews, use the same bounded and paced mechanism. Four assembling requests per player and a 120-second timeout bound abandoned work.
 
-The pre-release `ABSHttpServer` and browser bootstrap-auth endpoint are removed so a future lifecycle change cannot accidentally restore a public listener. Large uploads are initially assembled in bounded memory like the reviewed CC:Tweaked design; temporary-file streaming is the next hardening step.
+The pre-release `ABSHttpServer` and browser bootstrap-auth endpoint are removed so a future lifecycle change cannot accidentally restore a public listener. Bodies above 64 KiB are assembled in OS-managed temporary files with incremental digest validation, then audio uploads are streamed into atomic source storage and passed to FFmpeg by path.
 
 ## Open decisions
 
@@ -138,8 +138,8 @@ The project writes comment-preserving TOML and NBT, but no code currently invoke
 
 Current code attenuates from the source center to the boundary. The original specification describes full volume inside the bounds and a configurable fade outside the boundary. Changing this affects existing worlds and needs an explicit migration/compatibility choice.
 
-### Remote audio endpoint
+### Bridge evolution after v1
 
-Status: Partially resolved
+Status: Deferred
 
-The client now derives the HTTP hostname from the active Minecraft connection and falls back to localhost for an integrated/local connection. This preserves the existing play packet. The fixed port still needs a compatibility design for proxies, NAT and configurable HTTP ports.
+The synchronous byte-array bridge remains the compatibility baseline. Async, streaming or cancellable synthesis requires an additive interface or adapter as described in `tts-bridge-api-v1.md`; no concrete v2 design is selected yet.

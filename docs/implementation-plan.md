@@ -32,9 +32,9 @@ Exit: current public behavior is protected without launching Minecraft, and rema
 
 Apply only issues demonstrated by the audit/tests:
 
-- Own and shut down the HTTP executor.
-- Reuse an HTTP client, add connection/request timeouts, track downloads, and cancel on disconnect.
-- Derive the audio HTTP host from the connected server instead of hard-coded localhost while keeping packet compatibility where possible.
+- Own and shut down Web RPC workers, schedulers and client transfer tasks.
+- Bound Provider HTTP calls, track Minecraft transfers, and cancel on disconnect.
+- Keep audio and WebUI traffic on Minecraft networking so no additional public port is required.
 - Add ffmpeg timeout, forced termination and bounded diagnostic capture.
 - Enforce request/text/upload limits while streaming.
 - Add deterministic cache keys covering engine, speaker, text and sorted parameters.
@@ -61,4 +61,3 @@ Exit: the Core/Add-on contract and compatibility policy are explicit and tested.
 - Verify dedicated-server remote clients, multiple clients, single player and provider-down behavior.
 - Add CI for the reproducible unit/build suite.
 - Publish known limitations: no moving 3D source, no 2D playback, and no timed subtitle track.
-
