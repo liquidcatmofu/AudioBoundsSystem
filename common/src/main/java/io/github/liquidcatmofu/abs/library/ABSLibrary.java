@@ -129,11 +129,15 @@ public final class ABSLibrary {
 
     /** フォルダに対するプレイヤーの実効アクセス。祖先の allowedPlayers も継承。 */
     public static FolderAccess access(LibraryFolder folder, UUID player, boolean isOp) {
+        if (folder == null || player == null) return FolderAccess.NONE;
         if (isOp) return FolderAccess.OWNER;
         if (player.toString().equals(folder.ownerUuid)) return FolderAccess.OWNER;
         LibraryFolder cur = folder;
-        while (cur != null) {
-            if (cur.allowedPlayers.contains(player.toString())) return FolderAccess.ALLOWED;
+        Set<String> visited = new LinkedHashSet<>();
+        while (cur != null && cur.id != null && visited.add(cur.id)) {
+            if (cur.allowedPlayers != null && cur.allowedPlayers.contains(player.toString())) {
+                return FolderAccess.ALLOWED;
+            }
             cur = cur.parentId == null ? null : loadFolder(cur.parentId).orElse(null);
         }
         return FolderAccess.NONE;
@@ -157,7 +161,8 @@ public final class ABSLibrary {
         }
         // 明示的に共有されたフォルダ以下
         for (LibraryFolder f : all) {
-            if (!visible.contains(f.id) && f.allowedPlayers.contains(player.toString())) {
+            if (!visible.contains(f.id) && f.allowedPlayers != null
+                    && f.allowedPlayers.contains(player.toString())) {
                 collectSubtree(f.id, byParent, visible);
             }
         }

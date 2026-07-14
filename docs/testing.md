@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Seventy-nine tests now pass across the project: 61 in `common` and 18 in `tts-addon`.
+Eighty-three tests now pass across the project: 65 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -429,3 +429,7 @@ BlockEntity NBT is the sole automatic restore source for Speakers and Audio Cont
 `LibrarySequenceTest` exercises create, load, update, sorted listing and delete against a temporary library root. Folder and sequence IDs are validated inside `LibrarySequence` itself, so crafted Controller refs cannot use `.`/`..` or slash-containing IDs to read JSON outside the library tree.
 
 `LibraryMetadataSafetyTest` verifies malformed folder, audio, TTS and sequence JSON is treated as an unavailable entry rather than escaping into an API or playback exception. Direct folder saves reject null or path-unsafe IDs, and Audio/TTS entry points also reject use before the library root is initialized.
+
+## Library sharing authorization
+
+`ABSLibraryAccessTest` builds a real temporary folder tree and verifies owner and operator access, inherited read/use sharing, owner and guest subtree listings, and rejection of null subjects. A visited-folder set bounds ancestor traversal, so cyclic parent metadata terminates without accidentally granting access.
