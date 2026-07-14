@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Sixty tests now pass across the project: 42 in `common` and 18 in `tts-addon`.
+Sixty-six tests now pass across the project: 48 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -403,3 +403,9 @@ Controller input decisions are isolated in `ControllerSignalTransition`, allowin
 Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify ordered mixing of ordinary and sequence refs, omission of missing sequences, malformed step handling and non-negative post-track delays. Controller playback schedules the following entry after the decoded track duration plus that step delay, matching WebUI sequence preview semantics.
 
 `ControllerQueueTiming` covers the remaining clock decisions without a running world: exact due-tick boundaries, minimum duration handling, deferred LEVEL loop restarts, and the conditions that stop rather than loop an exhausted queue. Speaker packet side effects still require integration coverage with controlled audio fixtures.
+
+## One-time audio transfer authorization
+
+`TokenStoreTest` uses an injected test clock rather than sleeping. It verifies that a token is valid through its exact 60-second boundary and rejected afterward, can be consumed only once even when two threads race, and is revoked by service cleanup. Minecraft packet delivery remains a separate integration concern.
+
+`AudioTransferServiceLifecycleTest` verifies that transfer-service start and stop are idempotent, that the executor can be started again after shutdown, and that stopping revokes every outstanding transfer token. The test never sends a Minecraft packet.
