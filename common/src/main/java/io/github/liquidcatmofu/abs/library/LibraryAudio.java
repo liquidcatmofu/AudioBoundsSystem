@@ -10,6 +10,8 @@ import io.github.liquidcatmofu.abs.io.AtomicFiles;
 import io.github.liquidcatmofu.abs.server.ServerAudioCache;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,6 +64,12 @@ public final class LibraryAudio {
     /** アップロードされたファイルを Ogg に変換して取り込み、メタデータを保存する。 */
     public static AudioEntry importAudio(String folderId, byte[] data, String originalName, UUID uploader)
             throws IOException, InterruptedException {
+        return importAudio(folderId, new ByteArrayInputStream(data), data.length, originalName, uploader);
+    }
+
+    public static AudioEntry importAudio(String folderId, InputStream data, long maxBytes,
+                                         String originalName, UUID uploader)
+            throws IOException, InterruptedException {
         if (!ABSLibrary.isSafeId(folderId)) throw new IOException("Invalid folder id");
         Path dir = audioDir(folderId);
         Files.createDirectories(dir);
@@ -69,18 +77,20 @@ public final class LibraryAudio {
         String ext = extensionOf(originalName);
         String id = UUID.randomUUID().toString();
 
-        // 変換と検証を終えてから、原本・キャッシュ・メタデータの順で確定する。
+        // 原本を上限付きで保存し、変換と検証後にキャッシュ・メタデータを確定する。
         String srcFile = id + ".src." + ext;
-        byte[] ogg = FfmpegTranscoder.toOgg(data, ext);
-        AudioContent.requireOgg(ogg);
-        String contentHash = AudioContent.sha256(ogg);
-        String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
         Path srcPath = dir.resolve(srcFile);
-        Path cachePath = ServerAudioCache.getDirectory().resolve(cacheFile);
         Path metadataPath = dir.resolve(id + ".json");
+        Path cachePath = null;
         boolean committed = false;
         try {
-            AtomicFiles.write(srcPath, data);
+            long inputSize = AtomicFiles.write(srcPath, data, maxBytes);
+            if (inputSize == 0) throw new EmptyUploadException();
+            byte[] ogg = FfmpegTranscoder.toOgg(srcPath, ext);
+            AudioContent.requireOgg(ogg);
+            String contentHash = AudioContent.sha256(ogg);
+            String cacheFile = id + "-" + contentHash.substring(0, 16) + ".ogg";
+            cachePath = ServerAudioCache.getDirectory().resolve(cacheFile);
             AtomicFiles.write(cachePath, ogg);
 
             long durationTicks;
@@ -107,9 +117,15 @@ public final class LibraryAudio {
         } finally {
             if (!committed) {
                 Files.deleteIfExists(metadataPath);
-                Files.deleteIfExists(cachePath);
+                if (cachePath != null) Files.deleteIfExists(cachePath);
                 Files.deleteIfExists(srcPath);
             }
+        }
+    }
+
+    public static final class EmptyUploadException extends IOException {
+        public EmptyUploadException() {
+            super("Empty upload");
         }
     }
 

@@ -342,3 +342,17 @@ BUILD SUCCESSFUL in 3s
 ```
 
 Forty-one tests now pass across the project: 25 in `common` and 16 in `tts-addon`. A real `/abs ui` browser session, 64 MiB upload, Ogg preview and two-client authorization test remain required.
+
+## File-backed WebUI uploads
+
+Web RPC request bodies above 64 KiB are assembled sequentially in an OS-managed temporary file with incremental SHA-256 validation. Cleanup covers success, malformed chunks, checksum failure, timeout, player disconnect and server stop. Audio imports then stream into atomic source storage and pass that file directly to FFmpeg, avoiding a full upload-sized Java heap copy.
+
+Two request-assembly tests cover the file-backed path, digest verification, ordering and cleanup. Two atomic-file tests cover bounded stream writes and non-replacement on overflow. Forty-five tests now pass across the project: 29 in `common` and 16 in `tts-addon`.
+
+```text
+rtk ./gradlew test
+BUILD SUCCESSFUL in 5s
+
+rtk ./gradlew build
+BUILD SUCCESSFUL in 14s
+```

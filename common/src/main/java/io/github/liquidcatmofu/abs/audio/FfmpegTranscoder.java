@@ -52,7 +52,32 @@ public final class FfmpegTranscoder {
         Path ffmpegLog = tempDir.resolve("ffmpeg.log");
         try {
             Files.write(inputFile, input);
+            return transcode(inputFile, outputOgg, ffmpegLog, executable, ext, input.length);
+        } finally {
+            Files.deleteIfExists(outputOgg);
+            Files.deleteIfExists(inputFile);
+            Files.deleteIfExists(ffmpegLog);
+            Files.deleteIfExists(tempDir);
+        }
+    }
 
+    public static byte[] toOgg(Path inputFile, String inputExt) throws IOException, InterruptedException {
+        String ext = (inputExt == null || inputExt.isBlank()) ? "bin" : inputExt;
+        Path tempDir = Files.createTempDirectory("abs-audio-");
+        Path outputOgg = tempDir.resolve("output.ogg");
+        Path ffmpegLog = tempDir.resolve("ffmpeg.log");
+        try {
+            return transcode(inputFile, outputOgg, ffmpegLog, ffmpegPath, ext, Files.size(inputFile));
+        } finally {
+            Files.deleteIfExists(outputOgg);
+            Files.deleteIfExists(ffmpegLog);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    private static byte[] transcode(Path inputFile, Path outputOgg, Path ffmpegLog,
+                                    String executable, String ext, long inputSize)
+            throws IOException, InterruptedException {
             ProcessBuilder pb = new ProcessBuilder(buildCommand(executable, inputFile, outputOgg));
             pb.redirectErrorStream(true);
             pb.redirectOutput(ffmpegLog.toFile());
@@ -74,14 +99,8 @@ public final class FfmpegTranscoder {
                 throw new IOException("ffmpeg failed (exit=" + exit + "): " + readDiagnostic(ffmpegLog));
             }
             AudioBoundsSystem.LOGGER.info("ABS: transcoded {} bytes ({}) -> {} bytes Ogg",
-                    input.length, ext, Files.size(outputOgg));
+                    inputSize, ext, Files.size(outputOgg));
             return Files.readAllBytes(outputOgg);
-        } finally {
-            Files.deleteIfExists(outputOgg);
-            Files.deleteIfExists(inputFile);
-            Files.deleteIfExists(ffmpegLog);
-            Files.deleteIfExists(tempDir);
-        }
     }
 
     static List<String> buildCommand(String executable, Path inputFile, Path outputOgg) {

@@ -248,14 +248,14 @@ public class LibraryApiHandler implements HttpHandler {
                     return;
                 }
                 String filename = URLDecoder.decode(rawName, StandardCharsets.UTF_8);
-                byte[] data = RequestBodyReader.readBytes(exchange, MAX_UPLOAD_BYTES);
-                if (data.length == 0) {
-                    WebAuthHelper.sendError(exchange, 400, "Empty upload");
-                    return;
-                }
-                try {
-                    AudioEntry entry = LibraryAudio.importAudio(folderId, data, filename, playerUuid);
+                try (var data = exchange.getRequestBody()) {
+                    AudioEntry entry = LibraryAudio.importAudio(
+                            folderId, data, MAX_UPLOAD_BYTES, filename, playerUuid);
                     WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
+                } catch (io.github.liquidcatmofu.abs.io.AtomicFiles.SizeLimitExceededException e) {
+                    WebAuthHelper.sendError(exchange, 413, "Upload is too large");
+                } catch (LibraryAudio.EmptyUploadException e) {
+                    WebAuthHelper.sendError(exchange, 400, "Empty upload");
                 } catch (IOException e) {
                     AudioBoundsSystem.LOGGER.error("ABS: audio import failed", e);
                     WebAuthHelper.sendError(exchange, 500, "変換に失敗しました（ffmpeg を確認してください）");
