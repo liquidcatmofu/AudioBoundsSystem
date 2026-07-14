@@ -9,6 +9,7 @@ import io.github.liquidcatmofu.abs.data.FalloffCurve;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlockEntities;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
+import io.github.liquidcatmofu.abs.network.PlayAudioPacket;
 import io.github.liquidcatmofu.abs.library.LibraryRef;
 import io.github.liquidcatmofu.abs.server.AudioTransferService;
 import io.netty.buffer.Unpooled;
@@ -208,13 +209,10 @@ public class SpeakerBlockEntity extends BlockEntity {
                 // プレイヤーごとに個別トークンを発行（トークンは単発使用）
                 UUID token = AudioTransferService.generateToken(path);
                 FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-                buf.writeBlockPos(worldPosition);
-                buf.writeLong(token.getMostSignificantBits());
-                buf.writeLong(token.getLeastSignificantBits());
-                buf.writeUtf(contentHash, 64);
-                buf.writeUtf(subtitleEnabled ? displayTrackTitle() : "", 128);
-                buf.writeUtf(subtitleEnabled ? subtitle : "", 512);
-                buf.writeVarInt(100);
+                new PlayAudioPacket(worldPosition, token, contentHash,
+                        subtitleEnabled ? displayTrackTitle() : "",
+                        subtitleEnabled ? subtitle : "",
+                        (int) Math.min(Integer.MAX_VALUE, durationTicks)).write(buf);
                 NetworkManager.sendToPlayer(player, ABSNetwork.PLAY_AUDIO, buf);
             }
         }
