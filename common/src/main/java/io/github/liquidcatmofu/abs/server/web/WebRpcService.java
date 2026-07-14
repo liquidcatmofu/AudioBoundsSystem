@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -33,35 +34,44 @@ public final class WebRpcService {
     private static final Map<RequestKey, RequestState> requests = new ConcurrentHashMap<>();
     private static final Map<UUID, AtomicInteger> playerRequestCounts = new ConcurrentHashMap<>();
     private static final Map<UUID, UUID> playerSessions = new ConcurrentHashMap<>();
-    private static volatile ScheduledExecutorService executor;
+    private static volatile ScheduledExecutorService scheduler;
+    private static volatile ExecutorService requestWorkers;
     private static volatile WebApiRouter router;
 
     private WebRpcService() {}
 
     public static synchronized void start(MinecraftServer server) {
-        if (executor != null) return;
+        if (scheduler != null) return;
         router = new WebApiRouter(server);
-        executor = Executors.newScheduledThreadPool(4, runnable -> {
-            Thread thread = new Thread(runnable, "abs-web-rpc");
+        scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "abs-web-rpc-scheduler");
             thread.setDaemon(true);
             return thread;
         });
-        executor.scheduleAtFixedRate(WebRpcService::purgeExpired,
+        requestWorkers = Executors.newFixedThreadPool(4, runnable -> {
+            Thread thread = new Thread(runnable, "abs-web-rpc-worker");
+            thread.setDaemon(true);
+            return thread;
+        });
+        scheduler.scheduleAtFixedRate(WebRpcService::purgeExpired,
                 30, 30, TimeUnit.SECONDS);
     }
 
     public static synchronized void stop() {
-        ScheduledExecutorService running = executor;
-        executor = null;
+        ScheduledExecutorService runningScheduler = scheduler;
+        ExecutorService runningWorkers = requestWorkers;
+        scheduler = null;
+        requestWorkers = null;
         router = null;
         requests.values().forEach(state -> closeBody(state.body()));
         requests.clear();
         playerRequestCounts.clear();
         playerSessions.clear();
-        if (running == null) return;
-        running.shutdownNow();
+        if (runningWorkers != null) runningWorkers.shutdownNow();
+        if (runningScheduler != null) runningScheduler.shutdownNow();
         try {
-            running.awaitTermination(5, TimeUnit.SECONDS);
+            if (runningWorkers != null) runningWorkers.awaitTermination(5, TimeUnit.SECONDS);
+            if (runningScheduler != null) runningScheduler.awaitTermination(5, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -82,7 +92,7 @@ public final class WebRpcService {
     public static void startRequest(ServerPlayer player, UUID requestId, String method, String path,
                                     String contentType, String filename, boolean csrfHeader,
                                     int totalLength, byte[] digest) {
-        if (executor == null || router == null) {
+        if (scheduler == null || requestWorkers == null || router == null) {
             sendError(player, requestId, 503, "WebUI RPC service is stopped");
             return;
         }
@@ -155,7 +165,7 @@ public final class WebRpcService {
     }
 
     private static void dispatch(UUID requestId, RequestState state) {
-        ScheduledExecutorService running = executor;
+        ExecutorService running = requestWorkers;
         WebApiRouter currentRouter = router;
         if (running == null || currentRouter == null) {
             closeBody(state.body());
@@ -211,7 +221,7 @@ public final class WebRpcService {
         NetworkManager.sendToPlayer(player, ABSNetwork.WEB_RPC_RESPONSE_START, start);
         if (body.length == 0) return;
 
-        ScheduledExecutorService running = executor;
+        ScheduledExecutorService running = scheduler;
         if (running != null) sendResponseBatch(running, player, requestId, body, 0);
     }
 

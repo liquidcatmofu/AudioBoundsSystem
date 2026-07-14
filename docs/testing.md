@@ -367,3 +367,5 @@ BUILD SUCCESSFUL in 12s
 ```
 
 Forty-seven tests now pass across the project: 29 in `common` and 18 in `tts-addon`.
+
+Web RPC request dispatch now uses a separate four-thread worker pool, while response pacing and expiry cleanup use a dedicated single-thread scheduler. This prevents slow Provider or FFmpeg calls from consuming the scheduler needed by unrelated RPC transfers. Runtime concurrency and shutdown interruption remain manual acceptance cases.
