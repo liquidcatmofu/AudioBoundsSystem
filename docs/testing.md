@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Forty-eight tests now pass across the project: 30 in `common` and 18 in `tts-addon`.
+Fifty-two tests now pass across the project: 34 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -395,3 +395,7 @@ rtk ./gradlew :forge:runGameTestServer
 3 required tests passed
 BUILD SUCCESSFUL in 20s
 ```
+
+## Audio Controller signal transitions
+
+Controller input decisions are isolated in `ControllerSignalTransition`, allowing their semantics to be checked without starting Minecraft. The unit tests cover PULSE rising edges, LEVEL strength changes and falling-to-zero stops, signal clamping, and active-playback STOP/RESTART behavior. The BlockEntity still owns the side effects (starting queues and stopping speakers), while its first server tick now samples the actual neighboring redstone signal after the level is attached.

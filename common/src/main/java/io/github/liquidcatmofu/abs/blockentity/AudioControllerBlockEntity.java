@@ -113,7 +113,7 @@ public class AudioControllerBlockEntity extends BlockEntity {
     }
 
     public void syncRedstoneState(int signal) {
-        int clampedSignal = Math.max(0, Math.min(15, signal));
+        int clampedSignal = ControllerSignalTransition.clampSignal(signal);
         int previousSignal = lastRedstoneSignal;
         lastRedstoneSignal = clampedSignal;
 
@@ -121,38 +121,25 @@ public class AudioControllerBlockEntity extends BlockEntity {
             return;
         }
 
-        switch (redstoneMode) {
-            case LEVEL -> {
-                if (clampedSignal <= 0) {
-                    if (previousSignal > 0) {
-                        stopPlayback(serverLevel);
-                    }
-                    return;
-                }
-
-                if (previousSignal != clampedSignal) {
-                    triggerSignal(serverLevel, clampedSignal);
-                }
-            }
-            case PULSE -> {
-                boolean risingEdge = previousSignal == 0 && clampedSignal > 0;
-                if (risingEdge) {
-                    triggerSignal(serverLevel, clampedSignal);
-                }
+        switch (ControllerSignalTransition.onSignalChange(redstoneMode, previousSignal, clampedSignal)) {
+            case START -> triggerSignal(serverLevel, clampedSignal);
+            case STOP -> stopPlayback(serverLevel);
+            case NONE, RESTART -> {
             }
         }
     }
 
     public void triggerSignal(ServerLevel level, int signal) {
         int clampedSignal = Math.max(1, Math.min(15, signal));
-        if (isPlaybackActive()) {
-            switch (retriggerMode) {
-                case STOP -> {
-                    stopPlayback(level);
-                    return;
-                }
-                case RESTART -> stopPlayback(level);
+        switch (ControllerSignalTransition.onTrigger(isPlaybackActive(), retriggerMode)) {
+            case STOP -> {
+                stopPlayback(level);
+                return;
             }
+            case RESTART -> stopPlayback(level);
+            case START -> {
+            }
+            case NONE -> throw new IllegalStateException("Trigger transition cannot be NONE");
         }
 
         startQueueForSignal(level, clampedSignal);
@@ -328,12 +315,6 @@ public class AudioControllerBlockEntity extends BlockEntity {
         redstoneMode        = RedstoneMode.fromString(tag.getString(KEY_REDSTONE_MODE));
         retriggerMode       = ControllerRetriggerMode.fromString(tag.getString(KEY_RETRIGGER_MODE));
         ownerUuid           = tag.hasUUID(KEY_OWNER_UUID) ? tag.getUUID(KEY_OWNER_UUID) : null;
-    }
-
-    @Override
-    public void setLevel(Level level) {
-        super.setLevel(level);
-        needsInitialRedstoneSync = false;
     }
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, AudioControllerBlockEntity controller) {
