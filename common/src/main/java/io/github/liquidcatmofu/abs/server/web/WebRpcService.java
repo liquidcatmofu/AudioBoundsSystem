@@ -256,12 +256,15 @@ public final class WebRpcService {
                 ("{\"error\":\"" + escaped + "\"}").getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String validateMetadata(String method, String path, int totalLength, byte[] digest) {
+    static String validateMetadata(String method, String path, int totalLength, byte[] digest) {
         if (!("GET".equals(method) || "POST".equals(method) || "PATCH".equals(method)
                 || "DELETE".equals(method))) return "Unsupported request method";
         try {
             URI uri = URI.create(path);
-            if (uri.isAbsolute() || uri.getHost() != null || !uri.getPath().startsWith("/api/")) {
+            String apiPath = uri.getPath();
+            if (uri.isAbsolute() || uri.getHost() != null || apiPath == null
+                    || !(apiPath.equals("/api") || apiPath.startsWith("/api/"))
+                    || hasRelativePathSegment(apiPath)) {
                 return "Invalid API path";
             }
         } catch (RuntimeException e) {
@@ -270,6 +273,13 @@ public final class WebRpcService {
         if (totalLength < 0 || totalLength > WebRpcProtocol.MAX_BODY_BYTES) return "Request body is too large";
         if (digest == null || digest.length != WebRpcProtocol.DIGEST_BYTES) return "Invalid request checksum";
         return null;
+    }
+
+    private static boolean hasRelativePathSegment(String path) {
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)) return true;
+        }
+        return false;
     }
 
     private static UUID sessionFor(UUID playerUuid) {

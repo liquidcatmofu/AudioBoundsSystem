@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Seventy-one tests now pass across the project: 53 in `common` and 18 in `tts-addon`.
+Seventy-five tests now pass across the project: 57 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -417,3 +417,5 @@ Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify 
 ## Web session lifetime
 
 `WebSessionStoreTest` uses an injected clock to verify the exact eight-hour validity boundary and rejection immediately afterward. It also covers per-session invalidation, server-wide clearing, unknown tokens and null input without waiting or launching Minecraft.
+
+`WebRpcServiceMetadataTest` fixes the request envelope accepted before chunk assembly: only GET/POST/PATCH/DELETE, local `/api` paths without `.` or `..` segments, bodies from zero through 64 MiB, and exactly 32-byte SHA-256 digests. Absolute, malformed and encoded traversal paths are rejected before routing.
