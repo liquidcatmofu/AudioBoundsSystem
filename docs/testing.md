@@ -386,7 +386,7 @@ Ninety-three tests now pass across the project: 75 in `common` and 18 in `tts-ad
 
 ## Forge GameTest foundation
 
-Forge has a separate `gameTest` source set, so test classes and SNBT structures are not packaged in the production mod. `:forge:runGameTestServer` starts the Forge 1.20.1 GameTest launch target headlessly on Java 17, runs the enabled `abs` namespace and exits with the test result. The suite verifies Speaker BlockEntity creation and round-trips representative Speaker and Audio Controller configurations through update NBT, including bounds, modes, audio/subtitle metadata, targets, queues, display names and ownership.
+Forge has a separate `gameTest` source set, so test classes and SNBT structures are not packaged in the production mod. `:forge:runGameTestServer` starts the Forge 1.20.1 GameTest launch target headlessly on Java 17, runs the enabled `abs` namespace and exits with the test result. The suite verifies Speaker BlockEntity creation, representative Speaker and Audio Controller NBT round trips, and Controller-to-Speaker playback start and timed completion using a controlled minimal Ogg fixture.
 
 Architectury Loom 1.7 requires two scoped launch workarounds: preserving the case-sensitive `gameTestServer` DLI environment and providing a non-duplicated Java module path. These apply only to the GameTest task and should be removed when a future Loom version handles the Forge template correctly.
 

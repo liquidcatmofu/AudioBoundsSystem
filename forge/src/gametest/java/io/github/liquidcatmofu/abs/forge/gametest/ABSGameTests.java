@@ -9,6 +9,9 @@ import io.github.liquidcatmofu.abs.data.ControllerRetriggerMode;
 import io.github.liquidcatmofu.abs.data.FalloffCurve;
 import io.github.liquidcatmofu.abs.data.RedstoneMode;
 import io.github.liquidcatmofu.abs.init.ABSBlocks;
+import io.github.liquidcatmofu.abs.audio.AudioContent;
+import io.github.liquidcatmofu.abs.library.ABSLibrary;
+import io.github.liquidcatmofu.abs.server.ServerAudioCache;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -18,6 +21,9 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @GameTestHolder(AudioBoundsSystem.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -92,5 +98,67 @@ public final class ABSGameTests {
                 "Retrigger mode was not restored");
         helper.assertTrue(owner.equals(restored.getOwnerUuid()), "Owner was not restored");
         helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 80)
+    public static void controllerPlaysConfiguredSpeakerQueue(GameTestHelper helper) {
+        BlockPos controllerPos = new BlockPos(1, 1, 1);
+        BlockPos speakerPos = new BlockPos(2, 1, 1);
+        helper.setBlock(controllerPos, ABSBlocks.AUDIO_CONTROLLER.get());
+        helper.setBlock(speakerPos, ABSBlocks.SPEAKER.get());
+        AudioControllerBlockEntity controller = (AudioControllerBlockEntity) helper.getBlockEntity(controllerPos);
+        SpeakerBlockEntity speaker = (SpeakerBlockEntity) helper.getBlockEntity(speakerPos);
+
+        String folderId = "gametest";
+        String audioId = "controller_fixture";
+        Path metadata = ABSLibrary.getRoot().resolve(folderId).resolve("audio").resolve(audioId + ".json");
+        Path cache = ServerAudioCache.getDirectory().resolve(audioId + ".ogg");
+        try {
+            byte[] ogg = minimalOgg(48_000, 48_000);
+            Files.createDirectories(metadata.getParent());
+            Files.write(cache, ogg);
+            String json = "{\"id\":\"" + audioId + "\",\"displayName\":\"GameTest\","
+                    + "\"cacheFile\":\"" + cache.getFileName() + "\",\"contentHash\":\""
+                    + AudioContent.sha256(ogg) + "\"}";
+            Files.writeString(metadata, json, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            helper.fail("Could not create controller audio fixture: " + e);
+            return;
+        }
+
+        controller.applyLoadedConfig("gametest-controller", List.of(new BlockPos(1, 0, 0)),
+                Map.of(15, List.of("lib:" + folderId + "/audio/" + audioId)),
+                RedstoneMode.PULSE, ControllerRetriggerMode.RESTART);
+        controller.triggerSignal(helper.getLevel(), 15);
+        helper.assertTrue(speaker.isPlaying(), "Controller did not start its target speaker");
+        helper.assertTrue(speaker.getAudioFile().isEmpty(), "Controller did not restore the speaker audio ref");
+
+        helper.runAfterDelay(25, () -> {
+            try {
+                helper.assertTrue(!speaker.isPlaying(), "Target speaker did not finish fixture playback");
+                Files.deleteIfExists(metadata);
+                Files.deleteIfExists(cache);
+                helper.succeed();
+            } catch (Exception e) {
+                helper.fail("Could not complete controller fixture test: " + e);
+            }
+        });
+    }
+
+    private static byte[] minimalOgg(int sampleRate, long granulePosition) {
+        byte[] page = new byte[44];
+        page[0] = 'O'; page[1] = 'g'; page[2] = 'g'; page[3] = 'S';
+        writeLittleEndian(page, 6, granulePosition, Long.BYTES);
+        page[26] = 1;
+        page[27] = 16;
+        page[28] = 1;
+        byte[] vorbis = "vorbis".getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(vorbis, 0, page, 29, vorbis.length);
+        writeLittleEndian(page, 40, sampleRate, Integer.BYTES);
+        return page;
+    }
+
+    private static void writeLittleEndian(byte[] data, int offset, long value, int bytes) {
+        for (int i = 0; i < bytes; i++) data[offset + i] = (byte) (value >>> (i * 8));
     }
 }
