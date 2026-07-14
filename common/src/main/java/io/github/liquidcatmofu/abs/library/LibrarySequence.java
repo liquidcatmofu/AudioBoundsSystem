@@ -52,7 +52,7 @@ public final class LibrarySequence {
         if (!Files.exists(meta)) return Optional.empty();
         try {
             return Optional.ofNullable(GSON.fromJson(Files.readString(meta, StandardCharsets.UTF_8), SequenceEntry.class));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return Optional.empty();
         }
     }

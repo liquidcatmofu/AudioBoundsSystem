@@ -32,7 +32,7 @@ public final class LibraryAudio {
 
     public static List<AudioEntry> list(String folderId) {
         List<AudioEntry> result = new ArrayList<>();
-        if (!ABSLibrary.isSafeId(folderId)) return result;
+        if (!ABSLibrary.isSafeId(folderId) || ABSLibrary.getRoot() == null) return result;
         Path dir = audioDir(folderId);
         if (!Files.isDirectory(dir)) return result;
         try (Stream<Path> files = Files.list(dir)) {
@@ -51,12 +51,14 @@ public final class LibraryAudio {
     }
 
     public static Optional<AudioEntry> load(String folderId, String audioId) {
-        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(audioId)) return Optional.empty();
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(audioId) || ABSLibrary.getRoot() == null) {
+            return Optional.empty();
+        }
         Path meta = audioDir(folderId).resolve(audioId + ".json");
         if (!Files.exists(meta)) return Optional.empty();
         try {
             return Optional.ofNullable(GSON.fromJson(Files.readString(meta, StandardCharsets.UTF_8), AudioEntry.class));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return Optional.empty();
         }
     }
@@ -70,7 +72,9 @@ public final class LibraryAudio {
     public static AudioEntry importAudio(String folderId, InputStream data, long maxBytes,
                                          String originalName, UUID uploader)
             throws IOException, InterruptedException {
-        if (!ABSLibrary.isSafeId(folderId)) throw new IOException("Invalid folder id");
+        if (!ABSLibrary.isSafeId(folderId) || ABSLibrary.getRoot() == null) {
+            throw new IOException("Invalid folder id or uninitialized library");
+        }
         Path dir = audioDir(folderId);
         Files.createDirectories(dir);
 

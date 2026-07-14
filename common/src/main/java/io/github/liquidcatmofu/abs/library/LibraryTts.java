@@ -31,7 +31,7 @@ public final class LibraryTts {
 
     public static List<TtsEntry> list(String folderId) {
         List<TtsEntry> result = new ArrayList<>();
-        if (!ABSLibrary.isSafeId(folderId)) return result;
+        if (!ABSLibrary.isSafeId(folderId) || ABSLibrary.getRoot() == null) return result;
         Path dir = ttsDir(folderId);
         if (!Files.isDirectory(dir)) return result;
         try (Stream<Path> files = Files.list(dir)) {
@@ -50,12 +50,14 @@ public final class LibraryTts {
     }
 
     public static Optional<TtsEntry> load(String folderId, String id) {
-        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(id)) return Optional.empty();
+        if (!ABSLibrary.isSafeId(folderId) || !ABSLibrary.isSafeId(id) || ABSLibrary.getRoot() == null) {
+            return Optional.empty();
+        }
         Path meta = ttsDir(folderId).resolve(id + ".json");
         if (!Files.exists(meta)) return Optional.empty();
         try {
             return Optional.ofNullable(GSON.fromJson(Files.readString(meta, StandardCharsets.UTF_8), TtsEntry.class));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return Optional.empty();
         }
     }
@@ -63,7 +65,9 @@ public final class LibraryTts {
     /** 合成済みの ogg を保存し、メタデータ（スクリプト込み）を書き出す。 */
     public static synchronized TtsEntry create(String folderId, String displayName, TTSSynthesisRequest req,
                                                String speakerName, byte[] ogg, UUID creator) throws IOException {
-        if (!ABSLibrary.isSafeId(folderId)) throw new IOException("Invalid folder id");
+        if (!ABSLibrary.isSafeId(folderId) || ABSLibrary.getRoot() == null) {
+            throw new IOException("Invalid folder id or uninitialized library");
+        }
         Path dir = ttsDir(folderId);
         Files.createDirectories(dir);
 

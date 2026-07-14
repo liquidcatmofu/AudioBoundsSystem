@@ -54,13 +54,16 @@ public final class ABSLibrary {
         if (!Files.exists(meta)) return Optional.empty();
         try {
             return Optional.ofNullable(GSON.fromJson(Files.readString(meta, StandardCharsets.UTF_8), LibraryFolder.class));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             AudioBoundsSystem.LOGGER.error("ABS: failed to load folder {}", id, e);
             return Optional.empty();
         }
     }
 
     public static void saveFolder(LibraryFolder folder) throws IOException {
+        if (folder == null || !isSafeId(folder.id) || libraryRoot == null) {
+            throw new IOException("Invalid folder or uninitialized library");
+        }
         Path dir = libraryRoot.resolve(folder.id);
         Files.createDirectories(dir.resolve("audio"));
         Files.createDirectories(dir.resolve("tts"));
