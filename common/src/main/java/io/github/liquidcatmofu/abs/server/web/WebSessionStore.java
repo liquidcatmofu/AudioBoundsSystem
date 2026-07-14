@@ -5,7 +5,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class WebSessionStore {
-    private static final long TTL_MS = 8 * 60 * 60 * 1000L;
+    static final long TTL_MS = 8 * 60 * 60 * 1000L;
     private static final ConcurrentHashMap<UUID, Entry> store = new ConcurrentHashMap<>();
 
     private record Entry(UUID playerUuid, long expiryMs) {}
@@ -14,15 +14,24 @@ public final class WebSessionStore {
 
     /** Minecraft RPC transport用に、接続済みプレイヤーへ直接セッションを発行する。 */
     public static UUID createSession(UUID playerUuid) {
-        purgeExpired();
+        return createSession(playerUuid, System.currentTimeMillis());
+    }
+
+    static UUID createSession(UUID playerUuid, long nowMs) {
+        purgeExpired(nowMs);
         UUID sessionToken = UUID.randomUUID();
-        store.put(sessionToken, new Entry(playerUuid, System.currentTimeMillis() + TTL_MS));
+        store.put(sessionToken, new Entry(playerUuid, nowMs + TTL_MS));
         return sessionToken;
     }
 
     public static Optional<UUID> getPlayerUuid(UUID sessionToken) {
+        return getPlayerUuid(sessionToken, System.currentTimeMillis());
+    }
+
+    static Optional<UUID> getPlayerUuid(UUID sessionToken, long nowMs) {
+        if (sessionToken == null) return Optional.empty();
         Entry entry = store.get(sessionToken);
-        if (entry == null || System.currentTimeMillis() > entry.expiryMs()) {
+        if (entry == null || nowMs > entry.expiryMs()) {
             store.remove(sessionToken);
             return Optional.empty();
         }
@@ -30,6 +39,7 @@ public final class WebSessionStore {
     }
 
     public static void invalidate(UUID sessionToken) {
+        if (sessionToken == null) return;
         store.remove(sessionToken);
     }
 
@@ -37,8 +47,7 @@ public final class WebSessionStore {
         store.clear();
     }
 
-    private static void purgeExpired() {
-        long now = System.currentTimeMillis();
-        store.entrySet().removeIf(e -> now > e.getValue().expiryMs());
+    private static void purgeExpired(long nowMs) {
+        store.entrySet().removeIf(e -> nowMs > e.getValue().expiryMs());
     }
 }

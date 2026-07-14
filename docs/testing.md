@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-Sixty-seven tests now pass across the project: 49 in `common` and 18 in `tts-addon`.
+Seventy-one tests now pass across the project: 53 in `common` and 18 in `tts-addon`.
 
 ## Forge GameTest foundation
 
@@ -413,3 +413,7 @@ Sequence expansion is similarly isolated in `ControllerQueuePlan`. Tests verify 
 ## Speaker bounds and falloff
 
 `AudioBoundsTest` covers normalized distances for sphere, box, cylinder and hemisphere bounds, including the hemisphere base. It also verifies every falloff curve is monotonic and exactly silent at and outside the configured boundary. This hard cutoff is required because dynamic speaker sounds use `Attenuation.NONE`; without it, the inverse-square curve remained audible everywhere at 10% volume.
+
+## Web session lifetime
+
+`WebSessionStoreTest` uses an injected clock to verify the exact eight-hour validity boundary and rejection immediately afterward. It also covers per-session invalidation, server-wide clearing, unknown tokens and null input without waiting or launching Minecraft.
