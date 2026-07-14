@@ -2,6 +2,39 @@ plugins {
     id 'com.github.johnrengelman.shadow'
 }
 
+def forgeGameTestModulePath = providers.provider {
+    def moduleKey = { file ->
+        def name = file.name
+        if (name.startsWith('securejarhandler-')) return 'securejarhandler'
+        if (name.startsWith('asm-commons-')) return 'asm-commons'
+        if (name.startsWith('asm-util-')) return 'asm-util'
+        if (name.startsWith('asm-analysis-')) return 'asm-analysis'
+        if (name.startsWith('asm-tree-')) return 'asm-tree'
+        if (name ==~ /asm-[0-9].*/) return 'asm'
+        return null
+    }
+    configurations.forgeRuntimeLibrary.files
+            .findAll { file -> moduleKey(file) != null }
+            .groupBy(moduleKey)
+            .values()
+            .collect { files -> files.first() }
+            .collect { file -> file.absolutePath }
+            .join(File.pathSeparator)
+}
+
+def absGameTestModClasses = providers.provider {
+    (sourceSets.main.output.files + sourceSets.gameTest.output.files)
+            .collect { file -> "abs%%${file.absolutePath}" }
+            .join(File.pathSeparator)
+}
+
+sourceSets {
+    gameTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath
+    }
+}
+
 loom {
     forge {
         mixinConfig "abs.mixins.json"
@@ -11,6 +44,47 @@ loom {
             sourceSet project(':tts-addon').sourceSets.main
             sourceSet project(':tts-addon-forge').sourceSets.main
         }
+    }
+    runs {
+        gameTestServer {
+            environment "gameTestServer"
+            // Architectury's parent layer already owns Forge bootstrap modules. Only ASM is
+            // needed here for Mixin; adding Forge modules again duplicates JarJarFileSystems.
+            defaultMainClass "cpw.mods.bootstraplauncher.BootstrapLauncher"
+            vmArgs "--add-opens", "java.base/java.util.jar=ALL-UNNAMED"
+            vmArgs "--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED"
+            vmArgs "--add-exports", "java.base/sun.security.util=ALL-UNNAMED"
+            vmArgs "--add-opens", "java.base/java.util.jar=cpw.mods.securejarhandler"
+            vmArgs "--add-opens", "java.base/java.lang.invoke=cpw.mods.securejarhandler"
+            vmArgs "--add-exports", "java.base/sun.security.util=cpw.mods.securejarhandler"
+            vmArgs "--add-exports", "jdk.naming.dns/com.sun.jndi.dns=java.naming"
+            name "Forge GameTest Server"
+            vmArg "-Dforge.enabledGameTestNamespaces=abs"
+            environmentVariable "MOD_CLASSES", absGameTestModClasses.get()
+            environmentVariable "MCP_MAPPINGS", "loom.stub"
+            runDir "run-gametest"
+            mods {
+                abs {
+                    sourceSet sourceSets.main
+                    sourceSet sourceSets.gameTest
+                }
+            }
+        }
+    }
+}
+
+def prepareGameTestStructures = tasks.register('prepareGameTestStructures', Copy) {
+    from 'src/gametest/resources/data/abs/gameteststructures'
+    into 'run-gametest/gameteststructures'
+}
+
+tasks.named('runGameTestServer').configure {
+    dependsOn tasks.named('gameTestClasses'), prepareGameTestStructures
+    doFirst {
+        jvmArgs '-Dfabric.dli.env=gameTestServer', '-p', forgeGameTestModulePath.get(), '--add-modules', [
+                'org.objectweb.asm', 'org.objectweb.asm.tree', 'org.objectweb.asm.commons',
+                'org.objectweb.asm.util', 'org.objectweb.asm.tree.analysis'
+        ].join(',')
     }
 }
 

@@ -18,7 +18,8 @@ out/
 hs_err_pid*
 
 # Common working directory
-run
+**/run/
+**/run-gametest/
 **/logs/
 
 # Tool-specific

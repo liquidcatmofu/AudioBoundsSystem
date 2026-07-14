@@ -383,3 +383,15 @@ BUILD SUCCESSFUL in 20s
 ```
 
 Forty-eight tests now pass across the project: 30 in `common` and 18 in `tts-addon`.
+
+## Forge GameTest foundation
+
+Forge has a separate `gameTest` source set, so test classes and SNBT structures are not packaged in the production mod. `:forge:runGameTestServer` starts the Forge 1.20.1 GameTest launch target headlessly on Java 17, runs the enabled `abs` namespace and exits with the test result. The first smoke test places an ABS Speaker Block and verifies that it creates a `SpeakerBlockEntity`.
+
+Architectury Loom 1.7 requires two scoped launch workarounds: preserving the case-sensitive `gameTestServer` DLI environment and providing a non-duplicated Java module path. These apply only to the GameTest task and should be removed when a future Loom version handles the Forge template correctly.
+
+```text
+rtk ./gradlew :forge:runGameTestServer
+1 required test passed
+BUILD SUCCESSFUL in 20s
+```
