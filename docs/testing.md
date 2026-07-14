@@ -356,3 +356,14 @@ BUILD SUCCESSFUL in 5s
 rtk ./gradlew build
 BUILD SUCCESSFUL in 14s
 ```
+
+## Provider error classification
+
+Core and the TTS addon now share typed synthesis failures for unavailable engines, timeouts, Provider HTTP errors and malformed responses. WebUI responses map these to 503, 504 or 502 without exposing the Provider response body. A loopback HTTP fixture verifies HTTP status preservation and malformed `audio_query` classification without requiring a real TTS engine or FFmpeg.
+
+```text
+rtk ./gradlew :tts-addon:test
+BUILD SUCCESSFUL in 12s
+```
+
+Forty-seven tests now pass across the project: 29 in `common` and 18 in `tts-addon`.

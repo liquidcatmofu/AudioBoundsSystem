@@ -10,11 +10,14 @@ import io.github.liquidcatmofu.abs.tts.config.TTSConfig;
 import io.github.liquidcatmofu.abs.tts.transcode.FfmpegTranscoder;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSParam;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSSpeaker;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisException;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -118,6 +121,20 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
 
     @Override
     public byte[] synthesizeToOgg(String text, String speakerId, Map<String, Double> params) throws Exception {
+        try {
+            return synthesize(text, speakerId, params);
+        } catch (TTSSynthesisException e) {
+            throw e;
+        } catch (SocketTimeoutException e) {
+            throw new TTSSynthesisException(TTSSynthesisException.Kind.TIMEOUT,
+                    id + " timed out", e);
+        } catch (ConnectException e) {
+            throw new TTSSynthesisException(TTSSynthesisException.Kind.UNAVAILABLE,
+                    id + " is unavailable", e);
+        }
+    }
+
+    private byte[] synthesize(String text, String speakerId, Map<String, Double> params) throws Exception {
         String base = baseUrl();
         String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8);
 
@@ -130,7 +147,7 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
             queryCon.getOutputStream().close();
             int responseCode = queryCon.getResponseCode();
             if (responseCode != 200) {
-                throw new IOException(id + " /audio_query failed: HTTP " + responseCode + " " + readError(queryCon));
+                throw providerHttpError("/audio_query", responseCode, queryCon);
             }
             audioQueryJson = readString(queryCon.getInputStream(), queryCon.getContentLengthLong(),
                     MAX_JSON_RESPONSE_BYTES, "audio_query response");
@@ -139,7 +156,13 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
         }
 
         // 2. パラメータを適用（pauseLength は -1 = null/自動）
-        JsonObject query = JsonParser.parseString(audioQueryJson).getAsJsonObject();
+        JsonObject query;
+        try {
+            query = JsonParser.parseString(audioQueryJson).getAsJsonObject();
+        } catch (RuntimeException e) {
+            throw new TTSSynthesisException(TTSSynthesisException.Kind.INVALID_RESPONSE,
+                    id + " returned an invalid audio_query response", e);
+        }
         if (params != null) {
             for (String key : PARAM_KEYS) {
                 Double v = params.get(key);
@@ -163,7 +186,7 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
             try (OutputStream os = synthCon.getOutputStream()) { os.write(queryBytes); }
             int responseCode = synthCon.getResponseCode();
             if (responseCode != 200) {
-                throw new IOException(id + " /synthesis failed: HTTP " + responseCode + " " + readError(synthCon));
+                throw providerHttpError("/synthesis", responseCode, synthCon);
             }
             wav = readBytes(synthCon.getInputStream(), synthCon.getContentLengthLong(),
                     MAX_WAV_RESPONSE_BYTES, "synthesis WAV response");
@@ -173,6 +196,11 @@ public class VoiceVoxCompatibleProvider implements TTSProvider {
 
         // 4. WAV → Ogg Vorbis
         return FfmpegTranscoder.toOgg(wav, TTSConfig.get().ffmpegPath());
+    }
+
+    private TTSSynthesisException providerHttpError(String endpoint, int status, HttpURLConnection connection) {
+        return new TTSSynthesisException(TTSSynthesisException.Kind.HTTP_ERROR, status,
+                id + " " + endpoint + " failed: HTTP " + status + " " + readError(connection));
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────

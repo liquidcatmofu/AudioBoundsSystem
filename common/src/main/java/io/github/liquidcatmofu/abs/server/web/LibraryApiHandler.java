@@ -16,6 +16,7 @@ import io.github.liquidcatmofu.abs.library.TtsEntry;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSBridge;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSBridgeRegistry;
 import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisRequest;
+import io.github.liquidcatmofu.abs.ttsbridge.TTSSynthesisException;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -424,6 +425,8 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendJson(exchange, 201, GSON.toJson(entry));
         } catch (IllegalArgumentException e) {
             WebAuthHelper.sendError(exchange, 400, e.getMessage());
+        } catch (TTSSynthesisException e) {
+            sendSynthesisError(exchange, e);
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: TTS synthesis failed", e);
             WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
@@ -474,6 +477,8 @@ public class LibraryApiHandler implements HttpHandler {
             WebAuthHelper.sendJson(exchange, 200, GSON.toJson(entry));
         } catch (IllegalArgumentException e) {
             WebAuthHelper.sendError(exchange, 400, e.getMessage());
+        } catch (TTSSynthesisException e) {
+            sendSynthesisError(exchange, e);
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.error("ABS: TTS re-synthesis failed", e);
             WebAuthHelper.sendError(exchange, 502, "TTS 合成に失敗しました（VOICEVOX の起動状況を確認してください）");
@@ -513,6 +518,17 @@ public class LibraryApiHandler implements HttpHandler {
         exchange.getResponseHeaders().set("Retry-After", "2");
         WebAuthHelper.sendError(exchange, 429, "Too many concurrent TTS synthesis requests");
         return false;
+    }
+
+    private void sendSynthesisError(HttpExchange exchange, TTSSynthesisException error) throws IOException {
+        switch (error.kind()) {
+            case UNAVAILABLE -> WebAuthHelper.sendError(exchange, 503, "TTS Provider に接続できません");
+            case TIMEOUT -> WebAuthHelper.sendError(exchange, 504, "TTS Provider がタイムアウトしました");
+            case HTTP_ERROR -> WebAuthHelper.sendError(exchange, 502,
+                    "TTS Provider がエラーを返しました (HTTP " + error.providerStatus() + ")");
+            case INVALID_RESPONSE -> WebAuthHelper.sendError(exchange, 502,
+                    "TTS Provider の応答を解析できませんでした");
+        }
     }
 
     private boolean isOp(UUID playerUuid) {
