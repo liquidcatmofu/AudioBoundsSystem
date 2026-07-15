@@ -306,12 +306,9 @@ public final class ABSNetwork {
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, AUDIO_TRANSFER_CHUNK, (buf, ctx) -> {
-            UUID token = buf.readUUID();
-            int totalLength = buf.readVarInt();
-            int offset = buf.readVarInt();
-            byte[] chunk = buf.readByteArray(AudioTransferService.MAX_CHUNK_BYTES);
+            AudioTransferChunkPacket packet = AudioTransferChunkPacket.read(buf);
             ctx.queue(() -> SpeakerAudioManager.INSTANCE.acceptTransferChunk(
-                    token, totalLength, offset, chunk));
+                    packet.token(), packet.totalLength(), packet.offset(), packet.chunk()));
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, AUDIO_TRANSFER_ERROR, (buf, ctx) -> {

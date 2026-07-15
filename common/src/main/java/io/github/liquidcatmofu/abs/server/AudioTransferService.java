@@ -4,6 +4,7 @@ import dev.architectury.networking.NetworkManager;
 import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
+import io.github.liquidcatmofu.abs.network.AudioTransferChunkPacket;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -120,10 +121,8 @@ public final class AudioTransferService {
                 if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
                 int end = Math.min(audio.length, offset + MAX_CHUNK_BYTES);
                 FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-                buf.writeUUID(token);
-                buf.writeVarInt(audio.length);
-                buf.writeVarInt(offset);
-                buf.writeByteArray(Arrays.copyOfRange(audio, offset, end));
+                new AudioTransferChunkPacket(token, audio.length, offset,
+                        Arrays.copyOfRange(audio, offset, end)).write(buf);
                 NetworkManager.sendToPlayer(player, ABSNetwork.AUDIO_TRANSFER_CHUNK, buf);
                 offset = end;
             }
