@@ -6,6 +6,7 @@ import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.client.sound.ABSDynamicSoundStore;
 import io.github.liquidcatmofu.abs.client.sound.ABSSpeakerSoundInstance;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
+import io.github.liquidcatmofu.abs.network.AudioTransferRequestPacket;
 import io.github.liquidcatmofu.abs.network.ChunkedTransferAssembler;
 import io.github.liquidcatmofu.abs.server.AudioTransferService;
 import io.netty.buffer.Unpooled;
@@ -164,7 +165,7 @@ public final class SpeakerAudioManager {
         Minecraft.getInstance().execute(() -> {
             if (operation.isCancelled()) return;
             FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-            buf.writeUUID(token);
+            new AudioTransferRequestPacket(token).write(buf);
             NetworkManager.sendToServer(ABSNetwork.REQUEST_AUDIO_TRANSFER, buf);
         });
         try {

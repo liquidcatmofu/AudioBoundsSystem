@@ -5,6 +5,7 @@ import io.github.liquidcatmofu.abs.AudioBoundsSystem;
 import io.github.liquidcatmofu.abs.audio.AudioContent;
 import io.github.liquidcatmofu.abs.network.ABSNetwork;
 import io.github.liquidcatmofu.abs.network.AudioTransferChunkPacket;
+import io.github.liquidcatmofu.abs.network.AudioTransferErrorPacket;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -165,8 +166,7 @@ public final class AudioTransferService {
 
     private static void sendError(ServerPlayer player, UUID token, String message) {
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-        buf.writeUUID(token);
-        buf.writeUtf(message, 128);
+        new AudioTransferErrorPacket(token, message).write(buf);
         NetworkManager.sendToPlayer(player, ABSNetwork.AUDIO_TRANSFER_ERROR, buf);
     }
 

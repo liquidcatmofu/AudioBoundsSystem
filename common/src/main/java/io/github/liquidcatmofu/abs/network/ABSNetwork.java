@@ -107,10 +107,10 @@ public final class ABSNetwork {
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.C2S, REQUEST_AUDIO_TRANSFER, (buf, ctx) -> {
-            UUID token = buf.readUUID();
+            AudioTransferRequestPacket packet = AudioTransferRequestPacket.read(buf);
             ctx.queue(() -> {
                 if (ctx.getPlayer() instanceof ServerPlayer player) {
-                    AudioTransferService.request(player, token);
+                    AudioTransferService.request(player, packet.token());
                 }
             });
         });
@@ -312,9 +312,8 @@ public final class ABSNetwork {
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, AUDIO_TRANSFER_ERROR, (buf, ctx) -> {
-            UUID token = buf.readUUID();
-            String message = buf.readUtf(128);
-            ctx.queue(() -> SpeakerAudioManager.INSTANCE.failTransfer(token, message));
+            AudioTransferErrorPacket packet = AudioTransferErrorPacket.read(buf);
+            ctx.queue(() -> SpeakerAudioManager.INSTANCE.failTransfer(packet.token(), packet.message()));
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, WEB_RPC_RESPONSE_START, (buf, ctx) -> {
