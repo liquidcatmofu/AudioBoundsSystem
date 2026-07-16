@@ -24,6 +24,19 @@ Use Java 17 for every release-gate command. Record the tested commit, loader ver
 
 ## Dedicated server and two clients
 
+For a local Forge test, start these in separate terminals. The client run
+configurations use separate directories and the usernames `PlayerOne` and
+`PlayerTwo`.
+
+```bash
+./gradlew forge:runServer
+./gradlew forge:runClientOne
+./gradlew forge:runClientTwo
+```
+
+Fabric provides the equivalent `fabric:runServer`, `fabric:runClientOne`, and
+`fabric:runClientTwo` tasks.
+
 - [ ] Both clients can authenticate their own WebUI sessions.
 - [ ] Owner, shared-player, non-owner and operator permissions match the documented library policy.
 - [ ] One Speaker playback reaches both nearby clients.

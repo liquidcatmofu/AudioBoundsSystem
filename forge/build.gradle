@@ -46,6 +46,22 @@ loom {
         }
     }
     runs {
+        clientOne {
+            client()
+            name "Forge Client One"
+            runDir "run-client-one"
+            programArg "--username"
+            programArg "PlayerOne"
+        }
+
+        clientTwo {
+            client()
+            name "Forge Client Two"
+            runDir "run-client-two"
+            programArg "--username"
+            programArg "PlayerTwo"
+        }
+
         gameTestServer {
             environment "gameTestServer"
             // Architectury's parent layer already owns Forge bootstrap modules. Only ASM is

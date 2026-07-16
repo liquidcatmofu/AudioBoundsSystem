@@ -7,6 +7,26 @@ architectury {
     fabric()
 }
 
+loom {
+    runs {
+        clientOne {
+            client()
+            name "Fabric Client One"
+            runDir "run-client-one"
+            programArg "--username"
+            programArg "PlayerOne"
+        }
+
+        clientTwo {
+            client()
+            name "Fabric Client Two"
+            runDir "run-client-two"
+            programArg "--username"
+            programArg "PlayerTwo"
+        }
+    }
+}
+
 configurations {
     common {
         canBeResolved = true
