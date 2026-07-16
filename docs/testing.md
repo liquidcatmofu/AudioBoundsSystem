@@ -146,7 +146,7 @@ rtk ./gradlew test
 BUILD SUCCESSFUL in 13s
 ```
 
-Nineteen tests now pass: 12 in `common` and 7 in `tts-addon`. New coverage verifies declared and chunked body limits, mutation-header policy, and rejection of unknown, non-finite and out-of-range provider parameters. Minecraft-side owner/OP/distance packet checks and the two-request synthesis semaphore still require integration or manual tests.
+19 tests now pass: 12 in `common` and 7 in `tts-addon`. New coverage verifies declared and chunked body limits, mutation-header policy, and rejection of unknown, non-finite and out-of-range provider parameters. Minecraft-side owner/OP/distance packet checks and the two-request synthesis semaphore still require integration or manual tests.
 
 ```text
 rtk ./gradlew build
@@ -169,7 +169,7 @@ rtk ./gradlew test
 BUILD SUCCESSFUL in 6s
 ```
 
-Twenty-two tests now pass: 15 in `common` and 7 in `tts-addon`. New tests cover atomic replacement without leftover temporary files, Ogg magic rejection and deterministic content hashing. Library-level interrupted-write and duplicate-registration tests still require a controllable cache-root seam or Minecraft integration fixture.
+22 tests now pass: 15 in `common` and 7 in `tts-addon`. New tests cover atomic replacement without leftover temporary files, Ogg magic rejection and deterministic content hashing. Library-level interrupted-write and duplicate-registration tests still require a controllable cache-root seam or Minecraft integration fixture.
 
 ```text
 rtk ./gradlew build
@@ -186,7 +186,7 @@ rtk ./gradlew test
 BUILD SUCCESSFUL in 16s
 ```
 
-Twenty-five tests now pass: 18 in `common` and 7 in `tts-addon`. Client-cache tests cover verified store/reload, corrupted-file deletion and least-recently-accessed eviction. The production maximum is 128 MiB and individual audio files remain limited to 64 MiB.
+25 tests now pass: 18 in `common` and 7 in `tts-addon`. Client-cache tests cover verified store/reload, corrupted-file deletion and least-recently-accessed eviction. The production maximum is 128 MiB and individual audio files remain limited to 64 MiB.
 
 ```text
 rtk ./gradlew build
@@ -209,7 +209,7 @@ rtk ./gradlew test
 BUILD SUCCESSFUL in 17s
 ```
 
-Twenty-seven tests now pass: 20 in `common` and 7 in `tts-addon`. New coverage verifies rejection of cache paths outside (or below) the root cache directory, root-level orphan deletion, protection of referenced/recent files, and preservation of TTS cache subdirectories.
+27 tests now pass: 20 in `common` and 7 in `tts-addon`. New coverage verifies rejection of cache paths outside (or below) the root cache directory, root-level orphan deletion, protection of referenced/recent files, and preservation of TTS cache subdirectories.
 
 Runtime verification is still required for maintenance shutdown and orphan cleanup while WebUI uploads or TTS re-synthesis are active.
 
@@ -223,7 +223,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 1m 3s
 ```
 
-Thirty tests now pass across the project: 21 in `common` and 9 in `tts-addon`. New coverage verifies validated full-request cache persistence, corrupt-entry deletion, reuse of a cached result without a second Provider invocation, and request-based duplicate identity independent of generated Ogg bytes.
+30 tests now pass across the project: 21 in `common` and 9 in `tts-addon`. New coverage verifies validated full-request cache persistence, corrupt-entry deletion, reuse of a cached result without a second Provider invocation, and request-based duplicate identity independent of generated Ogg bytes.
 
 Manual verification is still required with a real Provider to confirm that repeated WebUI requests skip both the Provider HTTP call and FFmpeg process.
 
@@ -276,7 +276,7 @@ rtk ./gradlew :tts-addon:test
 BUILD SUCCESSFUL in 3s
 ```
 
-Thirty-six tests now pass across the project: 22 in `common` and 14 in `tts-addon`. A live HTTP fixture test for connection cleanup, non-200 diagnostics and chunked transfer remains open.
+36 tests now pass across the project: 22 in `common` and 14 in `tts-addon`. A live HTTP fixture test for connection cleanup, non-200 diagnostics and chunked transfer remains open.
 
 ## Provider discovery cache
 
@@ -287,7 +287,7 @@ rtk ./gradlew :tts-addon:test
 BUILD SUCCESSFUL in 3s
 ```
 
-Thirty-seven tests now pass across the project: 22 in `common` and 15 in `tts-addon`.
+37 tests now pass across the project: 22 in `common` and 15 in `tts-addon`.
 
 ## Persistent engine URLs
 
@@ -298,7 +298,7 @@ rtk ./gradlew :tts-addon:test
 BUILD SUCCESSFUL in 8s
 ```
 
-Thirty-eight tests now pass across the project: 22 in `common` and 16 in `tts-addon`. Runtime verification with a non-default Provider URL remains open.
+38 tests now pass across the project: 22 in `common` and 16 in `tts-addon`. Runtime verification with a non-default Provider URL remains open.
 
 ## Minecraft audio transfer foundation
 
@@ -314,7 +314,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 13s
 ```
 
-Thirty-nine tests now pass across the project: 23 in `common` and 16 in `tts-addon`. Actual two-client playback and disconnect-during-transfer remain manual acceptance tests.
+39 tests now pass across the project: 23 in `common` and 16 in `tts-addon`. Actual two-client playback and disconnect-during-transfer remain manual acceptance tests.
 
 ## WebUI RPC routing foundation
 
@@ -328,7 +328,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 13s
 ```
 
-Forty tests now pass across the project: 24 in `common` and 16 in `tts-addon`.
+40 tests now pass across the project: 24 in `common` and 16 in `tts-addon`.
 
 ## Loopback WebUI and Minecraft Web RPC
 
@@ -341,13 +341,13 @@ rtk ./gradlew :common:test
 BUILD SUCCESSFUL in 3s
 ```
 
-Forty-one tests now pass across the project: 25 in `common` and 16 in `tts-addon`. A real `/abs ui` browser session, 64 MiB upload, Ogg preview and two-client authorization test remain required.
+41 tests now pass across the project: 25 in `common` and 16 in `tts-addon`. A real `/abs ui` browser session, 64 MiB upload, Ogg preview and two-client authorization test remain required.
 
 ## File-backed WebUI uploads
 
 Web RPC request bodies above 64 KiB are assembled sequentially in an OS-managed temporary file with incremental SHA-256 validation. Cleanup covers success, malformed chunks, checksum failure, timeout, player disconnect and server stop. Audio imports then stream into atomic source storage and pass that file directly to FFmpeg, avoiding a full upload-sized Java heap copy.
 
-Two request-assembly tests cover the file-backed path, digest verification, ordering and cleanup. Two atomic-file tests cover bounded stream writes and non-replacement on overflow. Forty-five tests now pass across the project: 29 in `common` and 16 in `tts-addon`.
+Two request-assembly tests cover the file-backed path, digest verification, ordering and cleanup. Two atomic-file tests cover bounded stream writes and non-replacement on overflow. 45 tests now pass across the project: 29 in `common` and 16 in `tts-addon`.
 
 ```text
 rtk ./gradlew test
@@ -366,7 +366,7 @@ rtk ./gradlew :tts-addon:test
 BUILD SUCCESSFUL in 12s
 ```
 
-Forty-seven tests now pass across the project: 29 in `common` and 18 in `tts-addon`.
+47 tests now pass across the project: 29 in `common` and 18 in `tts-addon`.
 
 Web RPC request dispatch now uses a separate four-thread worker pool, while response pacing and expiry cleanup use a dedicated single-thread scheduler. This prevents slow Provider or FFmpeg calls from consuming the scheduler needed by unrelated RPC transfers. Runtime concurrency and shutdown interruption remain manual acceptance cases.
 
@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-One hundred thirteen tests now pass across the project: 94 in `common` and 19 in `tts-addon`.
+114 tests now pass across the project: 95 in `common` and 19 in `tts-addon`.
 
 ## Forge GameTest foundation
 

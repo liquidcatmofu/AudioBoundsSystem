@@ -39,10 +39,7 @@ public final class ClientWebServer {
 
     public synchronized void open() {
         try {
-            ensureStarted();
-            localToken = UUID.randomUUID();
-            URI uri = URI.create("http://127.0.0.1:" + server.getAddress().getPort()
-                    + "/auth/" + localToken);
+            URI uri = createAuthUri();
             Minecraft minecraft = Minecraft.getInstance();
             if (minecraft.player != null) {
                 Component link = Component.literal("[ABS ダッシュボードを開く]")
@@ -58,6 +55,13 @@ public final class ClientWebServer {
                 minecraft.player.sendSystemMessage(Component.literal("[ABS] ローカルWebUIを起動できませんでした。"));
             }
         }
+    }
+
+    synchronized URI createAuthUri() throws IOException {
+        ensureStarted();
+        localToken = UUID.randomUUID();
+        return URI.create("http://127.0.0.1:" + server.getAddress().getPort()
+                + "/auth/" + localToken);
     }
 
     public synchronized void stop() {

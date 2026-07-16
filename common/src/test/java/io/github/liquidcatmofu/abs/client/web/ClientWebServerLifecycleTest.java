@@ -47,4 +47,31 @@ class ClientWebServerLifecycleTest {
         assertEquals("{\"error\":\"Unauthorized\"}", response.body());
         assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
     }
+
+    @Test
+    void authUrlIssuesCookieThatUnlocksWebUi() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+
+        HttpResponse<String> auth = client.send(
+                HttpRequest.newBuilder(server.createAuthUri()).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(302, auth.statusCode());
+        assertEquals("/ui", auth.headers().firstValue("Location").orElseThrow());
+        String cookie = auth.headers().firstValue("Set-Cookie").orElseThrow();
+        assertTrue(cookie.contains("HttpOnly"));
+        assertTrue(cookie.contains("SameSite=Strict"));
+
+        HttpResponse<String> ui = client.send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/ui"))
+                        .header("Cookie", cookie.substring(0, cookie.indexOf(';')))
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, ui.statusCode());
+        assertTrue(ui.body().contains("<html"));
+        assertEquals("no-store", ui.headers().firstValue("Cache-Control").orElseThrow());
+    }
 }
