@@ -46,6 +46,17 @@ class TTSAudioCacheTest {
     }
 
     @Test
+    void fullKeyChangesWithSynthesisFormatVersion() {
+        String current = TTSAudioCache.computeKey(
+                "ogg-vorbis-v1", "voicevox", "3", "hello", Map.of());
+        String future = TTSAudioCache.computeKey(
+                "ogg-vorbis-v2", "voicevox", "3", "hello", Map.of());
+
+        assertNotEquals(current, future);
+        assertEquals(current, TTSAudioCache.computeKey("voicevox", "3", "hello", Map.of()));
+    }
+
+    @Test
     void simpleCommandKeyRemainsStable() {
         assertEquals("9341952d71496c1b", TTSAudioCache.computeKey("3", "hello"));
     }

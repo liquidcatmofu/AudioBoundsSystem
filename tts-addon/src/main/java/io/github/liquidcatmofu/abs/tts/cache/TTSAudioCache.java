@@ -18,6 +18,7 @@ import java.util.TreeMap;
 
 public final class TTSAudioCache {
     public static final long DEFAULT_MAX_BYTES = 128L * 1024L * 1024L;
+    static final String SYNTHESIS_FORMAT_VERSION = "ogg-vorbis-v1";
     private static final long MAX_CACHE_FILE_BYTES = 64L * 1024L * 1024L;
     private static Path cacheDir;
     private static long maxBytes = DEFAULT_MAX_BYTES;
@@ -64,8 +65,14 @@ public final class TTSAudioCache {
      */
     public static String computeKey(String engineId, String speakerId, String text,
                                     Map<String, Double> params) {
+        return computeKey(SYNTHESIS_FORMAT_VERSION, engineId, speakerId, text, params);
+    }
+
+    static String computeKey(String formatVersion, String engineId, String speakerId, String text,
+                             Map<String, Double> params) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateField(digest, formatVersion);
             updateField(digest, engineId);
             updateField(digest, speakerId);
             updateField(digest, text);
