@@ -99,6 +99,11 @@ public final class ClientWebServer {
         return server != null && executor != null && !executor.isShutdown();
     }
 
+    synchronized int port() {
+        if (server == null) throw new IllegalStateException("Client Web server is not running");
+        return server.getAddress().getPort();
+    }
+
     private void handleAuth(HttpExchange exchange) throws IOException {
         try {
             UUID expected = localToken;
