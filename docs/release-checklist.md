@@ -37,13 +37,19 @@ configurations use separate directories and the usernames `PlayerOne` and
 Fabric provides the equivalent `fabric:runServer`, `fabric:runClientOne`, and
 `fabric:runClientTwo` tasks.
 
-- [ ] Both clients can authenticate their own WebUI sessions.
-- [ ] Owner, shared-player, non-owner and operator permissions match the documented library policy.
-- [ ] One Speaker playback reaches both nearby clients.
+On the first local server run, accept the generated `eula.txt` and set
+`online-mode=false` in `server.properties`. This is only for local development
+with the two fixed offline test identities; do not use that setting for a
+public server.
+
+- [x] Both clients can authenticate their own WebUI sessions.
+- [x] Owner, shared-player, non-owner and operator permissions match the documented library policy.
+- [x] One Speaker playback reaches both nearby clients.
 - [ ] Each client receives a player-bound transfer token; another player cannot consume or discard it.
 - [ ] Concurrent playback respects the two-transfer server limit and retries transient busy responses.
 - [ ] A cached client does not download again and its unused token is promptly discarded.
 - [ ] Disconnecting during download clears the client operation and does not block later transfers.
+- [x] Disconnecting and reconnecting normally leaves WebUI and playback functional.
 - [ ] Stopping and restarting the dedicated server leaves no stale Web RPC, transfer, probe or maintenance task.
 
 ## TTS and failure handling
