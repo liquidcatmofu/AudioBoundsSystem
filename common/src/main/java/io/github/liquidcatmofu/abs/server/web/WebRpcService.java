@@ -77,6 +77,11 @@ public final class WebRpcService {
         }
     }
 
+    static synchronized boolean isRunning() {
+        return scheduler != null && !scheduler.isShutdown()
+                && requestWorkers != null && !requestWorkers.isShutdown();
+    }
+
     public static void playerDisconnected(ServerPlayer player) {
         UUID playerUuid = player.getUUID();
         for (Map.Entry<RequestKey, RequestState> entry : requests.entrySet()) {
