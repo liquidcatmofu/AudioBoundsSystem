@@ -77,7 +77,7 @@ public final class ClientWebServer {
         }
     }
 
-    private void ensureStarted() throws IOException {
+    synchronized void ensureStarted() throws IOException {
         if (server != null) return;
         HttpServer created = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ExecutorService createdExecutor = Executors.newFixedThreadPool(4, runnable -> {
@@ -93,6 +93,10 @@ public final class ClientWebServer {
         server = created;
         executor = createdExecutor;
         AudioBoundsSystem.LOGGER.info("ABS: local WebUI started on loopback port {}", created.getAddress().getPort());
+    }
+
+    synchronized boolean isRunning() {
+        return server != null && executor != null && !executor.isShutdown();
     }
 
     private void handleAuth(HttpExchange exchange) throws IOException {
