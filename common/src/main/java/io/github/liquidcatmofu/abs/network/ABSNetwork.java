@@ -53,6 +53,7 @@ public final class ABSNetwork {
     public static final ResourceLocation PLAY_AUDIO = new ResourceLocation("abs", "play_audio");
     public static final ResourceLocation STOP_AUDIO = new ResourceLocation("abs", "stop_audio");
     public static final ResourceLocation REQUEST_AUDIO_TRANSFER = new ResourceLocation("abs", "request_audio_transfer");
+    public static final ResourceLocation DISCARD_AUDIO_TRANSFER = new ResourceLocation("abs", "discard_audio_transfer");
     public static final ResourceLocation AUDIO_TRANSFER_CHUNK = new ResourceLocation("abs", "audio_transfer_chunk");
     public static final ResourceLocation AUDIO_TRANSFER_ERROR = new ResourceLocation("abs", "audio_transfer_error");
     public static final ResourceLocation WEB_RPC_REQUEST_START = new ResourceLocation("abs", "web_rpc_request_start");
@@ -111,6 +112,15 @@ public final class ABSNetwork {
             ctx.queue(() -> {
                 if (ctx.getPlayer() instanceof ServerPlayer player) {
                     AudioTransferService.request(player, packet.token());
+                }
+            });
+        });
+
+        NetworkManager.registerReceiver(NetworkManager.Side.C2S, DISCARD_AUDIO_TRANSFER, (buf, ctx) -> {
+            AudioTransferRequestPacket packet = AudioTransferRequestPacket.read(buf);
+            ctx.queue(() -> {
+                if (ctx.getPlayer() instanceof ServerPlayer player) {
+                    AudioTransferService.discard(packet.token(), player.getUUID());
                 }
             });
         });

@@ -195,6 +195,7 @@ public final class SpeakerAudioManager {
                 var cached = cache.get(contentHash);
                 if (cached.isPresent()) {
                     AudioBoundsSystem.LOGGER.debug("ABS: client audio cache hit {}", contentHash);
+                    discardToken(token);
                     return cached.get();
                 }
             }
@@ -239,6 +240,14 @@ public final class SpeakerAudioManager {
             }
             return diskCache;
         }
+    }
+
+    private void discardToken(UUID token) {
+        Minecraft.getInstance().execute(() -> {
+            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+            new AudioTransferRequestPacket(token).write(buf);
+            NetworkManager.sendToServer(ABSNetwork.DISCARD_AUDIO_TRANSFER, buf);
+        });
     }
 
     private void stopDownload(BlockPos pos) {

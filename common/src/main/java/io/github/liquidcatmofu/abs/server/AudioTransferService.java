@@ -66,12 +66,16 @@ public final class AudioTransferService {
         return executor != null;
     }
 
-    public static UUID generateToken(Path path) {
-        return TokenStore.generate(path);
+    public static UUID generateToken(Path path, UUID playerUuid) {
+        return TokenStore.generate(path, playerUuid);
+    }
+
+    public static void discard(UUID token, UUID playerUuid) {
+        TokenStore.discard(token, playerUuid);
     }
 
     public static void request(ServerPlayer player, UUID token) {
-        Path path = TokenStore.consume(token).orElse(null);
+        Path path = TokenStore.consume(token, player.getUUID()).orElse(null);
         if (path == null) {
             sendError(player, token, "Audio request expired or was already used");
             return;

@@ -34,10 +34,11 @@ class AudioTransferServiceLifecycleTest {
     @Test
     void stoppingServiceRevokesOutstandingTransferTokens() {
         AudioTransferService.start();
-        UUID token = AudioTransferService.generateToken(Path.of("audio.ogg"));
+        UUID player = UUID.randomUUID();
+        UUID token = AudioTransferService.generateToken(Path.of("audio.ogg"), player);
 
         AudioTransferService.stop();
 
-        assertTrue(TokenStore.consume(token).isEmpty());
+        assertTrue(TokenStore.consume(token, player).isEmpty());
     }
 }

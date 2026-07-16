@@ -207,7 +207,7 @@ public class SpeakerBlockEntity extends BlockEntity {
         for (ServerPlayer player : level.players()) {
             if (player.distanceToSqr(center) <= maxRange * maxRange) {
                 // プレイヤーごとに個別トークンを発行（トークンは単発使用）
-                UUID token = AudioTransferService.generateToken(path);
+                UUID token = AudioTransferService.generateToken(path, player.getUUID());
                 FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
                 new PlayAudioPacket(worldPosition, token, contentHash,
                         subtitleEnabled ? displayTrackTitle() : "",
