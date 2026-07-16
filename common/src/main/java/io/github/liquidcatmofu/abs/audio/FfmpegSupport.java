@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 起動時に ffmpeg / ffprobe の有無と必要なエンコーダ・デコーダの有無を検査し、
@@ -127,18 +128,13 @@ public final class FfmpegSupport {
             pb.redirectErrorStream(true);
             pb.redirectOutput(output.toFile());
             process = pb.start();
-            if (!process.waitFor(15, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(2, TimeUnit.SECONDS);
-                return null;
-            }
+            ExternalProcessRunner.await(process, 15, TimeUnit.SECONDS);
             try (var input = Files.newInputStream(output)) {
                 return new String(input.readNBytes(4 * 1024 * 1024), StandardCharsets.UTF_8);
             }
+        } catch (TimeoutException e) {
+            return null;
         } catch (InterruptedException e) {
-            if (process != null) {
-                process.destroyForcibly();
-            }
             Thread.currentThread().interrupt();
             return null;
         } catch (Exception e) {
