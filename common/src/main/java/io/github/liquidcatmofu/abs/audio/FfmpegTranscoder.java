@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 任意の音声ファイルを Ogg Vorbis に変換するCore共通サービス。
@@ -82,19 +83,13 @@ public final class FfmpegTranscoder {
             pb.redirectErrorStream(true);
             pb.redirectOutput(ffmpegLog.toFile());
             Process proc = pb.start();
-            int exit;
-            try {
-                if (!proc.waitFor(TRANSCODE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                    terminate(proc);
-                    throw new IOException("ffmpeg timed out after " + TRANSCODE_TIMEOUT_SECONDS + " seconds: "
-                            + readDiagnostic(ffmpegLog));
-                }
-                exit = proc.exitValue();
-            } catch (InterruptedException e) {
-                terminate(proc);
-                Thread.currentThread().interrupt();
-                throw e;
-            }
+        int exit;
+        try {
+            exit = ExternalProcessRunner.await(proc, TRANSCODE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            throw new IOException("ffmpeg timed out after " + TRANSCODE_TIMEOUT_SECONDS + " seconds: "
+                    + readDiagnostic(ffmpegLog), e);
+        }
             if (exit != 0) {
                 throw new IOException("ffmpeg failed (exit=" + exit + "): " + readDiagnostic(ffmpegLog));
             }
@@ -114,19 +109,6 @@ public final class FfmpegTranscoder {
                 "-fflags", "+bitexact",
                 outputOgg.toString()
         );
-    }
-
-    private static void terminate(Process process) {
-        process.destroy();
-        try {
-            if (!process.waitFor(2, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(2, TimeUnit.SECONDS);
-            }
-        } catch (InterruptedException e) {
-            process.destroyForcibly();
-            Thread.currentThread().interrupt();
-        }
     }
 
     private static String readDiagnostic(Path log) {
