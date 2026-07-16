@@ -108,6 +108,11 @@ public final class ClientWebServer {
         return server.getAddress().getPort();
     }
 
+    synchronized InetSocketAddress bindAddress() {
+        if (server == null) throw new IllegalStateException("Client Web server is not running");
+        return server.getAddress();
+    }
+
     private void handleAuth(HttpExchange exchange) throws IOException {
         try {
             UUID expected = localToken;

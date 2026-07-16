@@ -74,4 +74,31 @@ class ClientWebServerLifecycleTest {
         assertTrue(ui.body().contains("<html"));
         assertEquals("no-store", ui.headers().firstValue("Cache-Control").orElseThrow());
     }
+
+    @Test
+    void listenerBindsOnlyToLoopback() throws Exception {
+        server.ensureStarted();
+
+        assertTrue(server.bindAddress().getAddress().isLoopbackAddress());
+        assertTrue(server.port() > 0);
+    }
+
+    @Test
+    void issuingNewAuthUrlInvalidatesPreviousUrl() throws Exception {
+        HttpClient client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+        URI first = server.createAuthUri();
+        URI second = server.createAuthUri();
+
+        HttpResponse<String> stale = client.send(
+                HttpRequest.newBuilder(first).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> current = client.send(
+                HttpRequest.newBuilder(second).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(403, stale.statusCode());
+        assertEquals(302, current.statusCode());
+    }
 }
