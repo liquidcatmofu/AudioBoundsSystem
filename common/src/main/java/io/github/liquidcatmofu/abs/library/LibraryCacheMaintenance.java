@@ -47,6 +47,10 @@ public final class LibraryCacheMaintenance {
         }
     }
 
+    static synchronized boolean isRunning() {
+        return executor != null && !executor.isShutdown();
+    }
+
     private static void runOnce(Path cacheRoot, long scanStartedAt) {
         try {
             if (Thread.currentThread().isInterrupted()) return;

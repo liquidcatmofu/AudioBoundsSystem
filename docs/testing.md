@@ -382,7 +382,7 @@ rtk ./gradlew build
 BUILD SUCCESSFUL in 20s
 ```
 
-One hundred nine tests now pass across the project: 90 in `common` and 19 in `tts-addon`.
+One hundred ten tests now pass across the project: 91 in `common` and 19 in `tts-addon`.
 
 ## Forge GameTest foundation
 

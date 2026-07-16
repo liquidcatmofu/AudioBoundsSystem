@@ -1,7 +1,9 @@
 package io.github.liquidcatmofu.abs.library;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
+import io.github.liquidcatmofu.abs.server.ServerAudioCache;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LibraryCacheMaintenanceTest {
     @TempDir
     Path tempDir;
+
+    @AfterEach
+    void stopMaintenance() {
+        LibraryCacheMaintenance.stop();
+    }
 
     @Test
     void removesOnlyOldUnreferencedRootOggFiles() throws Exception {
@@ -38,5 +45,22 @@ class LibraryCacheMaintenanceTest {
         assertFalse(Files.exists(orphan));
         assertTrue(Files.exists(recent));
         assertTrue(Files.exists(nested));
+    }
+
+    @Test
+    void startAndStopAreIdempotentAndRestartable() throws Exception {
+        ABSLibrary.init(tempDir);
+        ServerAudioCache.init(tempDir);
+
+        LibraryCacheMaintenance.start();
+        LibraryCacheMaintenance.start();
+        assertTrue(LibraryCacheMaintenance.isRunning());
+
+        LibraryCacheMaintenance.stop();
+        LibraryCacheMaintenance.stop();
+        assertFalse(LibraryCacheMaintenance.isRunning());
+
+        LibraryCacheMaintenance.start();
+        assertTrue(LibraryCacheMaintenance.isRunning());
     }
 }
