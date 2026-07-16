@@ -72,25 +72,23 @@ public final class AudioTransferService {
     }
 
     public static void request(ServerPlayer player, UUID token) {
-        Path path = TokenStore.consume(token, player.getUUID()).orElse(null);
-        if (path == null) {
-            sendError(player, token, "Audio request expired or was already used");
+        ScheduledExecutorService running = executor;
+        if (running == null) {
+            sendError(player, token, "Audio transfer service is stopped");
             return;
         }
-
         if (!transferLimiter.tryAcquire(player.getUUID())) {
             sendError(player, token, "Audio transfer service is busy");
             return;
         }
-
-        ScheduledExecutorService running = executor;
-        if (running == null) {
-            transferLimiter.release(player.getUUID());
-            sendError(player, token, "Audio transfer service is stopped");
-            return;
-        }
         try {
             running.execute(() -> {
+                Path path = TokenStore.consume(token, player.getUUID()).orElse(null);
+                if (path == null) {
+                    sendError(player, token, "Audio request expired or was already used");
+                    transferLimiter.release(player.getUUID());
+                    return;
+                }
                 try {
                     byte[] audio = readAudio(path);
                     sendBatch(running, player, token, audio, 0);
