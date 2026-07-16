@@ -16,12 +16,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /** Sends authorized audio files through bounded Minecraft custom-payload chunks. */
 public final class AudioTransferService {
@@ -32,8 +30,8 @@ public final class AudioTransferService {
     private static final int CHUNKS_PER_BATCH = 8;
     private static final long BATCH_DELAY_MILLIS = 50;
 
-    private static final ConcurrentHashMap<UUID, AtomicInteger> activeTransfers = new ConcurrentHashMap<>();
-    private static final AtomicInteger totalActiveTransfers = new AtomicInteger();
+    private static final TransferConcurrencyLimiter transferLimiter =
+            new TransferConcurrencyLimiter(MAX_ACTIVE_TRANSFERS, MAX_TRANSFERS_PER_PLAYER);
     private static volatile ScheduledExecutorService executor;
 
     private AudioTransferService() {}
@@ -58,8 +56,7 @@ public final class AudioTransferService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        activeTransfers.clear();
-        totalActiveTransfers.set(0);
+        transferLimiter.clear();
     }
 
     public static boolean isRunning() {
@@ -81,23 +78,14 @@ public final class AudioTransferService {
             return;
         }
 
-        AtomicInteger playerTransfers = activeTransfers.computeIfAbsent(
-                player.getUUID(), ignored -> new AtomicInteger());
-        if (playerTransfers.incrementAndGet() > MAX_TRANSFERS_PER_PLAYER) {
-            releasePlayer(player.getUUID(), playerTransfers);
-            sendError(player, token, "Too many concurrent audio transfers");
-            return;
-        }
-        if (totalActiveTransfers.incrementAndGet() > MAX_ACTIVE_TRANSFERS) {
-            totalActiveTransfers.decrementAndGet();
-            releasePlayer(player.getUUID(), playerTransfers);
+        if (!transferLimiter.tryAcquire(player.getUUID())) {
             sendError(player, token, "Audio transfer service is busy");
             return;
         }
 
         ScheduledExecutorService running = executor;
         if (running == null) {
-            release(player.getUUID(), playerTransfers);
+            transferLimiter.release(player.getUUID());
             sendError(player, token, "Audio transfer service is stopped");
             return;
         }
@@ -105,21 +93,21 @@ public final class AudioTransferService {
             running.execute(() -> {
                 try {
                     byte[] audio = readAudio(path);
-                    sendBatch(running, player, token, audio, 0, playerTransfers);
+                    sendBatch(running, player, token, audio, 0);
                 } catch (Exception e) {
                     AudioBoundsSystem.LOGGER.warn("ABS: failed to transfer audio for {}", player.getGameProfile().getName(), e);
                     sendError(player, token, "Audio transfer failed");
-                    release(player.getUUID(), playerTransfers);
+                    transferLimiter.release(player.getUUID());
                 }
             });
         } catch (RejectedExecutionException e) {
-            release(player.getUUID(), playerTransfers);
+            transferLimiter.release(player.getUUID());
             sendError(player, token, "Audio transfer service is stopping");
         }
     }
 
     private static void sendBatch(ScheduledExecutorService running, ServerPlayer player, UUID token,
-                                  byte[] audio, int startOffset, AtomicInteger playerTransfers) {
+                                  byte[] audio, int startOffset) {
         int offset = startOffset;
         try {
             for (int sent = 0; sent < CHUNKS_PER_BATCH && offset < audio.length; sent++) {
@@ -133,23 +121,23 @@ public final class AudioTransferService {
             }
 
             if (offset >= audio.length) {
-                release(player.getUUID(), playerTransfers);
+                transferLimiter.release(player.getUUID());
                 return;
             }
             int nextOffset = offset;
-            running.schedule(() -> sendBatch(running, player, token, audio, nextOffset, playerTransfers),
+            running.schedule(() -> sendBatch(running, player, token, audio, nextOffset),
                     BATCH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             sendError(player, token, "Audio transfer interrupted");
-            release(player.getUUID(), playerTransfers);
+            transferLimiter.release(player.getUUID());
         } catch (RejectedExecutionException e) {
             sendError(player, token, "Audio transfer service is stopping");
-            release(player.getUUID(), playerTransfers);
+            transferLimiter.release(player.getUUID());
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.warn("ABS: failed to send audio chunks to {}", player.getGameProfile().getName(), e);
             sendError(player, token, "Audio transfer failed");
-            release(player.getUUID(), playerTransfers);
+            transferLimiter.release(player.getUUID());
         }
     }
 
@@ -174,14 +162,4 @@ public final class AudioTransferService {
         NetworkManager.sendToPlayer(player, ABSNetwork.AUDIO_TRANSFER_ERROR, buf);
     }
 
-    private static void release(UUID playerUuid, AtomicInteger playerTransfers) {
-        totalActiveTransfers.updateAndGet(active -> Math.max(0, active - 1));
-        releasePlayer(playerUuid, playerTransfers);
-    }
-
-    private static void releasePlayer(UUID playerUuid, AtomicInteger playerTransfers) {
-        if (playerTransfers.decrementAndGet() <= 0) {
-            activeTransfers.remove(playerUuid, playerTransfers);
-        }
-    }
 }
