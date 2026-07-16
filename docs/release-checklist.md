@@ -4,9 +4,9 @@ Use Java 17 for every release-gate command. Record the tested commit, loader ver
 
 ## Automated gate
 
-- [ ] `rtk ./gradlew clean test build` succeeds.
-- [ ] `rtk ./gradlew :forge:runGameTestServer` reports all required tests passed.
-- [ ] `rtk git diff --check` succeeds.
+- [ ] `./gradlew clean test build` succeeds.
+- [ ] `./gradlew :forge:runGameTestServer` reports all required tests passed.
+- [ ] `git diff --check` succeeds.
 - [ ] The release worktree contains no unintended files.
 - [ ] The first GitHub Actions run succeeds with read-only repository permissions.
 
@@ -14,12 +14,13 @@ Use Java 17 for every release-gate command. Record the tested commit, loader ver
 
 - [ ] Forge starts with ABS Core alone and generates its Core configuration.
 - [ ] Forge starts with ABS Core plus TTS Addon and generates `config/abs-tts.toml`.
-- [ ] Fabric starts with the same module combinations.
-- [ ] `/abs ui` opens the loopback WebUI without requiring a separately opened port.
-- [ ] Uploading an audio file registers one library entry and plays from a Speaker.
-- [ ] Replaying the same entry uses the client disk cache without another audio transfer.
-- [ ] Subtitle display is disabled on a newly placed Speaker.
-- [ ] Enabling subtitles shows the configured title or library display name, never an internal UUID reference.
+- [x] Fabric starts with the same module combinations.
+- [x] `/abs ui` opens the loopback WebUI without requiring a separately opened port.
+- [x] Uploading an audio file registers one library entry and plays from a Speaker.
+- [x] Replaying the same entry uses the client disk cache without another audio transfer.
+- [x] Subtitle display is disabled on a newly placed Speaker.
+- [x] Enabling subtitles shows the configured title or library display name, never an internal UUID reference.
+- [x] Subtitle display duration follows the audio duration.
 
 ## Dedicated server and two clients
 
@@ -35,7 +36,7 @@ Use Java 17 for every release-gate command. Record the tested commit, loader ver
 ## TTS and failure handling
 
 - [ ] Each configured Provider discovers engines and speakers.
-- [ ] Repeating an identical synthesis request returns immediately from cache and creates no duplicate library entry.
+- [x] Repeating an identical synthesis request returns immediately from cache and creates no duplicate library entry.
 - [ ] Changing engine, speaker, text or a numeric parameter creates a distinct cache identity.
 - [ ] A non-default local or remote Provider URL works after restart.
 - [ ] An unavailable Provider returns a bounded user-facing error without hanging a Web RPC worker.
