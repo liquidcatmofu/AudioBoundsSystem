@@ -61,3 +61,5 @@ Exit: the Core/Add-on contract and compatibility policy are explicit and tested.
 - Verify dedicated-server remote clients, multiple clients, single player and provider-down behavior.
 - Add CI for the reproducible unit/build suite.
 - Publish known limitations: no moving 3D source, no 2D playback, and no timed subtitle track.
+
+Execute and retain the results from `release-checklist.md` for the release candidate.

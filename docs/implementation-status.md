@@ -16,6 +16,7 @@ Status terms used here are: **Verified working** for explicitly reported manual 
 - Modules: `common`, `fabric`, `forge`, `tts-addon`, `tts-addon-fabric`, `tts-addon-forge`.
 - `./gradlew build` succeeded on 2026-07-13 for all six modules.
 - Ordinary unit tests run in `common` and `tts-addon`; GitHub Actions runs the full build and Forge GameTest on Java 17.
+- `release-checklist.md` separates automated gates from the remaining single-player, two-client and Provider acceptance checks.
 
 ## Feature inventory
 
