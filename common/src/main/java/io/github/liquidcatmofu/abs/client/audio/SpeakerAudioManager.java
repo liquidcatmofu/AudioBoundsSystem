@@ -53,7 +53,6 @@ public final class SpeakerAudioManager {
         String verifiedHash = ClientAudioCache.isValidHash(contentHash) ? contentHash : "";
         DownloadOperation operation = new DownloadOperation(token);
         downloads.put(pos, operation);
-        transfers.put(token, operation);
         operation.setTask(downloadExecutor.submit(() -> {
             byte[] bytes = null;
             Throwable error = null;
@@ -114,10 +113,12 @@ public final class SpeakerAudioManager {
         }
     }
 
-    public void failTransfer(UUID token, String message) {
+    public void failTransfer(UUID token, String message, boolean retryable) {
         DownloadOperation operation = transfers.get(token);
         if (operation != null && transfers.remove(token, operation)) {
-            operation.fail(new IOException(message));
+            operation.fail(retryable
+                    ? new RetryableTransferException(message)
+                    : new IOException(message));
         }
     }
 
@@ -162,21 +163,32 @@ public final class SpeakerAudioManager {
     }
 
     private byte[] requestAudio(UUID token, DownloadOperation operation) throws IOException, InterruptedException {
-        Minecraft.getInstance().execute(() -> {
-            if (operation.isCancelled()) return;
-            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-            new AudioTransferRequestPacket(token).write(buf);
-            NetworkManager.sendToServer(ABSNetwork.REQUEST_AUDIO_TRANSFER, buf);
-        });
-        try {
-            return operation.result.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof IOException io) throw io;
-            throw new IOException("Audio transfer failed", cause);
-        } catch (TimeoutException e) {
-            throw new IOException("Audio transfer timed out", e);
+        for (int attempt = 1; attempt <= AudioTransferRetryPolicy.MAX_ATTEMPTS; attempt++) {
+            CompletableFuture<byte[]> result = operation.beginAttempt();
+            transfers.put(token, operation);
+            Minecraft.getInstance().execute(() -> {
+                if (operation.isCancelled()) return;
+                FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+                new AudioTransferRequestPacket(token).write(buf);
+                NetworkManager.sendToServer(ABSNetwork.REQUEST_AUDIO_TRANSFER, buf);
+            });
+            try {
+                return result.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (AudioTransferRetryPolicy.shouldRetry(
+                        cause instanceof RetryableTransferException, attempt)) {
+                    Thread.sleep(AudioTransferRetryPolicy.delayMillis(attempt));
+                    continue;
+                }
+                if (cause instanceof IOException io) throw io;
+                throw new IOException("Audio transfer failed", cause);
+            } catch (TimeoutException e) {
+                transfers.remove(token, operation);
+                throw new IOException("Audio transfer timed out", e);
+            }
         }
+        throw new IOException("Audio transfer retry limit reached");
     }
 
     private byte[] loadAudio(UUID token, String contentHash, DownloadOperation operation)
@@ -272,7 +284,7 @@ public final class SpeakerAudioManager {
     private static final class DownloadOperation {
         private final ChunkedTransferAssembler assembler =
                 new ChunkedTransferAssembler(AudioTransferService.MAX_AUDIO_BYTES);
-        private final CompletableFuture<byte[]> result = new CompletableFuture<>();
+        private volatile CompletableFuture<byte[]> result = new CompletableFuture<>();
         private final UUID token;
         private volatile Future<?> task;
         private volatile boolean cancelled;
@@ -288,6 +300,11 @@ public final class SpeakerAudioManager {
             }
         }
 
+        private synchronized CompletableFuture<byte[]> beginAttempt() {
+            if (result.isDone()) result = new CompletableFuture<>();
+            return result;
+        }
+
         private void cancel() {
             cancelled = true;
             result.cancel(true);
@@ -301,12 +318,18 @@ public final class SpeakerAudioManager {
             return cancelled;
         }
 
-        private void complete(byte[] bytes) {
+        private synchronized void complete(byte[] bytes) {
             result.complete(bytes);
         }
 
-        private void fail(Throwable error) {
+        private synchronized void fail(Throwable error) {
             result.completeExceptionally(error);
+        }
+    }
+
+    private static final class RetryableTransferException extends IOException {
+        private RetryableTransferException(String message) {
+            super(message);
         }
     }
 }

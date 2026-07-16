@@ -323,7 +323,8 @@ public final class ABSNetwork {
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, AUDIO_TRANSFER_ERROR, (buf, ctx) -> {
             AudioTransferErrorPacket packet = AudioTransferErrorPacket.read(buf);
-            ctx.queue(() -> SpeakerAudioManager.INSTANCE.failTransfer(packet.token(), packet.message()));
+            ctx.queue(() -> SpeakerAudioManager.INSTANCE.failTransfer(
+                    packet.token(), packet.message(), packet.retryable()));
         });
 
         NetworkManager.registerReceiver(NetworkManager.Side.S2C, WEB_RPC_RESPONSE_START, (buf, ctx) -> {

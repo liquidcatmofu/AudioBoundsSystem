@@ -23,7 +23,7 @@ class AudioTransferControlPacketTest {
     @Test
     void errorRoundTripsTokenAndMessage() {
         AudioTransferErrorPacket expected = new AudioTransferErrorPacket(
-                UUID.randomUUID(), "Audio request expired or was already used");
+                UUID.randomUUID(), "Audio transfer service is busy", true);
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
 
         expected.write(buf);

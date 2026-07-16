@@ -74,18 +74,18 @@ public final class AudioTransferService {
     public static void request(ServerPlayer player, UUID token) {
         ScheduledExecutorService running = executor;
         if (running == null) {
-            sendError(player, token, "Audio transfer service is stopped");
+            sendError(player, token, "Audio transfer service is stopped", true);
             return;
         }
         if (!transferLimiter.tryAcquire(player.getUUID())) {
-            sendError(player, token, "Audio transfer service is busy");
+            sendError(player, token, "Audio transfer service is busy", true);
             return;
         }
         try {
             running.execute(() -> {
                 Path path = TokenStore.consume(token, player.getUUID()).orElse(null);
                 if (path == null) {
-                    sendError(player, token, "Audio request expired or was already used");
+                    sendError(player, token, "Audio request expired or was already used", false);
                     transferLimiter.release(player.getUUID());
                     return;
                 }
@@ -94,13 +94,13 @@ public final class AudioTransferService {
                     sendBatch(running, player, token, audio, 0);
                 } catch (Exception e) {
                     AudioBoundsSystem.LOGGER.warn("ABS: failed to transfer audio for {}", player.getGameProfile().getName(), e);
-                    sendError(player, token, "Audio transfer failed");
+                    sendError(player, token, "Audio transfer failed", false);
                     transferLimiter.release(player.getUUID());
                 }
             });
         } catch (RejectedExecutionException e) {
             transferLimiter.release(player.getUUID());
-            sendError(player, token, "Audio transfer service is stopping");
+            sendError(player, token, "Audio transfer service is stopping", true);
         }
     }
 
@@ -127,14 +127,14 @@ public final class AudioTransferService {
                     BATCH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            sendError(player, token, "Audio transfer interrupted");
+            sendError(player, token, "Audio transfer interrupted", false);
             transferLimiter.release(player.getUUID());
         } catch (RejectedExecutionException e) {
-            sendError(player, token, "Audio transfer service is stopping");
+            sendError(player, token, "Audio transfer service is stopping", true);
             transferLimiter.release(player.getUUID());
         } catch (Exception e) {
             AudioBoundsSystem.LOGGER.warn("ABS: failed to send audio chunks to {}", player.getGameProfile().getName(), e);
-            sendError(player, token, "Audio transfer failed");
+            sendError(player, token, "Audio transfer failed", false);
             transferLimiter.release(player.getUUID());
         }
     }
@@ -154,9 +154,9 @@ public final class AudioTransferService {
         return bytes;
     }
 
-    private static void sendError(ServerPlayer player, UUID token, String message) {
+    private static void sendError(ServerPlayer player, UUID token, String message, boolean retryable) {
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-        new AudioTransferErrorPacket(token, message).write(buf);
+        new AudioTransferErrorPacket(token, message, retryable).write(buf);
         NetworkManager.sendToPlayer(player, ABSNetwork.AUDIO_TRANSFER_ERROR, buf);
     }
 
